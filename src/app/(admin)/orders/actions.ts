@@ -323,6 +323,17 @@ export async function uploadArtworkAction(formData: FormData) {
   revalidatePath(`/orders/${item.orderId}`);
   revalidatePath(`/orders/${item.orderId}/items/${item.id}/artwork`);
 }
+export async function uploadArtworkLayerAction(formData: FormData) {
+  const orderItemId = String(formData.get("orderItemId") ?? "");
+  const file = formData.get("file");
+  if (!(file instanceof File)) throw new Error("Choose an image.");
+  const item = await prisma.orderItem.findUnique({ where: { id: orderItemId }, include: { order: true } });
+  if (!item) throw new Error("ORDER_ITEM_NOT_FOUND");
+  const now = new Date();
+  const relative = await saveArtworkFile(file, item.order.orderNumber, "original", now.getFullYear(), now.getMonth() + 1);
+  await prisma.orderFile.create({ data: { orderId: item.orderId, originalFilename: file.name, storagePath: relative, mimeType: file.type, sizeBytes: file.size } });
+  return relative;
+}
 export async function saveArtworkExportAction(formData: FormData) {
   const itemId = String(formData.get("orderItemId") ?? "");
   const dataUrl = String(formData.get("dataUrl") ?? "");

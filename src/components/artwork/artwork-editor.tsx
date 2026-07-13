@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ActiveSelection, Canvas, FabricImage, Group, Rect, IText } from "fabric";
+import {
+  ActiveSelection,
+  Canvas,
+  FabricImage,
+  Group,
+  Rect,
+  IText,
+} from "fabric";
 
 export interface ContourSettings {
   enabled: boolean;
@@ -46,6 +53,7 @@ interface ArtworkEditorProps {
       positionY: number;
     },
   ) => Promise<void>;
+  onPersistImage?: (file: File) => Promise<string>;
   exportPending?: boolean;
 }
 
@@ -63,6 +71,7 @@ export function ArtworkEditor({
   savedState,
   onExport,
   onSave,
+  onPersistImage,
   exportPending = false,
 }: ArtworkEditorProps) {
   const canvasElement = useRef<HTMLCanvasElement>(null);
@@ -100,7 +109,33 @@ export function ArtworkEditor({
   const [rightTab, setRightTab] = useState<"layers" | "history">("layers");
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [recentColors, setRecentColors] = useState<string[]>(["#ffffff", "#000000", "#ff0000", "#00ff00", "#0000ff"]);
+  const [recentColors, setRecentColors] = useState<string[]>([
+    "#ffffff",
+    "#000000",
+    "#ff0000",
+    "#00ff00",
+    "#0000ff",
+  ]);
+  useEffect(() => {
+    setLeftCollapsed(
+      window.sessionStorage.getItem("printx-left-panel-collapsed") === "true",
+    );
+    setRightCollapsed(
+      window.sessionStorage.getItem("printx-right-panel-collapsed") === "true",
+    );
+  }, []);
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      "printx-left-panel-collapsed",
+      String(leftCollapsed),
+    );
+  }, [leftCollapsed]);
+  useEffect(() => {
+    window.sessionStorage.setItem(
+      "printx-right-panel-collapsed",
+      String(rightCollapsed),
+    );
+  }, [rightCollapsed]);
   const fallbackFonts = [
     "Arial",
     "Calibri",
@@ -451,7 +486,13 @@ export function ArtworkEditor({
         }),
       );
       savedJson.current = serialise();
-      history.current = [{ snapshot: savedJson.current, label: "Opened document", timestamp: Date.now() }];
+      history.current = [
+        {
+          snapshot: savedJson.current,
+          label: "Opened document",
+          timestamp: Date.now(),
+        },
+      ];
       historyIndex.current = 0;
       const root = canvasElement.current?.parentElement;
       if (root) {
@@ -687,7 +728,9 @@ export function ArtworkEditor({
   const addImageFile = async (file: File) => {
     const canvas = fabricCanvas.current;
     if (!canvas || !file.type.startsWith("image/")) return;
-    const url = URL.createObjectURL(file);
+    const url = onPersistImage
+      ? await onPersistImage(file)
+      : URL.createObjectURL(file);
     try {
       const image = await FabricImage.fromURL(url);
       image.set({
@@ -710,7 +753,7 @@ export function ArtworkEditor({
       markDirty();
       refreshSelection();
     } finally {
-      URL.revokeObjectURL(url);
+      if (!onPersistImage) URL.revokeObjectURL(url);
     }
   };
   const addTextLayer = () => {
@@ -748,7 +791,14 @@ export function ArtworkEditor({
   const changeTextColour = (object: IText, colour: string) => {
     if (!/^#[0-9a-f]{6}$/i.test(colour)) return;
     updateLayer(object, { fill: colour }, "Changed text colour");
-    setRecentColors((colors) => [colour, ...colors.filter((value) => value.toLowerCase() !== colour.toLowerCase())].slice(0, 8));
+    setRecentColors((colors) =>
+      [
+        colour,
+        ...colors.filter(
+          (value) => value.toLowerCase() !== colour.toLowerCase(),
+        ),
+      ].slice(0, 8),
+    );
   };
   const deleteLayer = (object: import("fabric").FabricObject) => {
     if (!window.confirm(`Delete layer “${layerName(object)}”?`)) return;
@@ -796,11 +846,70 @@ export function ArtworkEditor({
     markDirty();
     refreshSelection();
   };
-  const duplicateSelected = async () => { const object = fabricCanvas.current?.getActiveObject(); if (object) await duplicateLayer(object); };
-  const copySelected = async () => { const object = fabricCanvas.current?.getActiveObject(); if (object) clipboardLayer.current = await object.clone(); };
-  const pasteSelected = async () => { const canvas = fabricCanvas.current; const source = clipboardLayer.current; if (!canvas || !source) return; const clone = await source.clone(); clone.set({ left: (source.left ?? 0) + 24, top: (source.top ?? 0) + 24, name: `${layerName(source)} copy`, selectable: true, evented: true }); canvas.add(clone); canvas.setActiveObject(clone); canvas.requestRenderAll(); markDirty("Pasted layer"); refreshSelection(); };
-  const groupSelected = () => { const canvas = fabricCanvas.current; const active = canvas?.getActiveObject(); if (!canvas || !(active instanceof ActiveSelection) || active.getObjects().length < 2) return; const objects = active.getObjects(); const count = objects.length; canvas.remove(active); const group = new Group(objects); group.set({ name: `Group ${count}` }); canvas.add(group); canvas.setActiveObject(group); canvas.requestRenderAll(); markDirty(`Grouped ${count} objects`); refreshSelection(); };
-  const ungroupSelected = () => { const canvas = fabricCanvas.current; const active = canvas?.getActiveObject(); if (!canvas || !(active instanceof Group) || active instanceof ActiveSelection) return; const objects = active.getObjects(); canvas.remove(active); objects.forEach((object) => canvas.add(object)); const selection = new ActiveSelection(objects, { canvas }); canvas.setActiveObject(selection); canvas.requestRenderAll(); markDirty("Ungrouped objects"); refreshSelection(); };
+  const duplicateSelected = async () => {
+    const object = fabricCanvas.current?.getActiveObject();
+    if (object) await duplicateLayer(object);
+  };
+  const copySelected = async () => {
+    const object = fabricCanvas.current?.getActiveObject();
+    if (object) clipboardLayer.current = await object.clone();
+  };
+  const pasteSelected = async () => {
+    const canvas = fabricCanvas.current;
+    const source = clipboardLayer.current;
+    if (!canvas || !source) return;
+    const clone = await source.clone();
+    clone.set({
+      left: (source.left ?? 0) + 24,
+      top: (source.top ?? 0) + 24,
+      name: `${layerName(source)} copy`,
+      selectable: true,
+      evented: true,
+    });
+    canvas.add(clone);
+    canvas.setActiveObject(clone);
+    canvas.requestRenderAll();
+    markDirty("Pasted layer");
+    refreshSelection();
+  };
+  const groupSelected = () => {
+    const canvas = fabricCanvas.current;
+    const active = canvas?.getActiveObject();
+    if (
+      !canvas ||
+      !(active instanceof ActiveSelection) ||
+      active.getObjects().length < 2
+    )
+      return;
+    const objects = active.getObjects();
+    const count = objects.length;
+    canvas.remove(active);
+    const group = new Group(objects);
+    group.set({ name: `Group ${count}` });
+    canvas.add(group);
+    canvas.setActiveObject(group);
+    canvas.requestRenderAll();
+    markDirty(`Grouped ${count} objects`);
+    refreshSelection();
+  };
+  const ungroupSelected = () => {
+    const canvas = fabricCanvas.current;
+    const active = canvas?.getActiveObject();
+    if (
+      !canvas ||
+      !(active instanceof Group) ||
+      active instanceof ActiveSelection
+    )
+      return;
+    const objects = active.getObjects();
+    canvas.remove(active);
+    objects.forEach((object) => canvas.add(object));
+    const selection = new ActiveSelection(objects, { canvas });
+    canvas.setActiveObject(selection);
+    canvas.requestRenderAll();
+    markDirty("Ungrouped objects");
+    refreshSelection();
+  };
   const save = async () => {
     if (!onSave || status === "saving") return;
     setStatus("saving");
@@ -877,21 +986,51 @@ export function ArtworkEditor({
       redo();
       return;
     }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void save(); return; }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      event.preventDefault();
+      void save();
+      return;
+    }
     if (
       target.matches(
         "input, textarea, select, [contenteditable='true'], button",
       )
     )
       return;
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d") { event.preventDefault(); void duplicateSelected(); return; }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") { event.preventDefault(); void copySelected(); return; }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") { event.preventDefault(); void pasteSelected(); return; }
-    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "g") { event.preventDefault(); if (event.shiftKey) ungroupSelected(); else groupSelected(); return; }
-    if (event.key === "Escape") { fabricCanvas.current?.discardActiveObject(); fabricCanvas.current?.requestRenderAll(); refreshSelection(); return; }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d") {
+      event.preventDefault();
+      void duplicateSelected();
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+      event.preventDefault();
+      void copySelected();
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
+      event.preventDefault();
+      void pasteSelected();
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "g") {
+      event.preventDefault();
+      if (event.shiftKey) ungroupSelected();
+      else groupSelected();
+      return;
+    }
+    if (event.key === "Escape") {
+      fabricCanvas.current?.discardActiveObject();
+      fabricCanvas.current?.requestRenderAll();
+      refreshSelection();
+      return;
+    }
     const object = fabricCanvas.current?.getActiveObject();
     if (!fabricCanvas.current || !object) return;
-    if (event.key === "Delete") { event.preventDefault(); deleteLayer(object); return; }
+    if (event.key === "Delete") {
+      event.preventDefault();
+      deleteLayer(object);
+      return;
+    }
     if (
       ["+", "=", "-", "_"].includes(event.key) &&
       !event.ctrlKey &&
@@ -956,7 +1095,7 @@ export function ArtworkEditor({
       className={`flex min-h-0 flex-col gap-3 ${editorFocused ? "outline outline-1 outline-emerald-500/50" : ""}`}
       onMouseDown={() => workspaceRef.current?.focus()}
     >
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">
+      <div className="scroll-mt-24 flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">
         <input
           ref={imageInput}
           type="file"
@@ -998,8 +1137,20 @@ export function ArtworkEditor({
         >
           Add Text
         </button>
-        <button type="button" onClick={groupSelected} className="rounded border border-slate-700 px-3 py-1">Group</button>
-        <button type="button" onClick={ungroupSelected} className="rounded border border-slate-700 px-3 py-1">Ungroup</button>
+        <button
+          type="button"
+          onClick={groupSelected}
+          className="rounded border border-slate-700 px-3 py-1"
+        >
+          Group
+        </button>
+        <button
+          type="button"
+          onClick={ungroupSelected}
+          className="rounded border border-slate-700 px-3 py-1"
+        >
+          Ungroup
+        </button>
         <button
           type="button"
           onClick={() => void save()}
@@ -1167,8 +1318,163 @@ export function ArtworkEditor({
           </div>
         ) : null}
       </div>
-      <div className={`grid min-h-0 gap-3 ${leftCollapsed && rightCollapsed ? "lg:grid-cols-[minmax(0,1fr)]" : leftCollapsed ? "lg:grid-cols-[minmax(0,1fr)_280px]" : rightCollapsed ? "lg:grid-cols-[280px_minmax(0,1fr)]" : "lg:grid-cols-[280px_minmax(0,1fr)_280px]"}`}>
-        {!leftCollapsed ? <aside className="hidden rounded-xl border border-slate-700 bg-slate-900 p-4 text-xs text-slate-300 lg:block"><div className="flex items-center justify-between"><div className="flex gap-1"><button type="button" onClick={() => setLeftTab("properties")} className={`rounded px-2 py-1 ${leftTab === "properties" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}>Properties</button><button type="button" onClick={() => setLeftTab("contour")} className={`rounded px-2 py-1 ${leftTab === "contour" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}>Cut Contour</button></div><button type="button" onClick={() => setLeftCollapsed(true)} aria-label="Collapse properties panel">‹</button></div><p className="mt-4 text-slate-400">{leftTab === "properties" ? (selectedObject ? `Selected: ${layerName(selectedObject)}` : "Select a layer to edit properties.") : "Contour settings are available in the Properties area."}</p>{leftTab === "properties" && selectedObject ? <div className="mt-3 space-y-2"><label className="block">X<input className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1" type="number" value={Math.round(selectedLeft)} onChange={(event) => numericChange("left", Number(event.target.value))} /></label><label className="block">Y<input className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1" type="number" value={Math.round(selectedTop)} onChange={(event) => numericChange("top", Number(event.target.value))} /></label><label className="block">Opacity<input className="mt-1 w-full" type="range" min="0" max="1" step="0.01" value={selectedObject.opacity ?? 1} onChange={(event) => updateSelected({ opacity: Number(event.target.value) })} /></label><button type="button" onClick={() => flipSelected("x")} className="mr-1 rounded border border-slate-700 px-2 py-1">Flip H</button><button type="button" onClick={() => flipSelected("y")} className="rounded border border-slate-700 px-2 py-1">Flip V</button></div> : null}{leftTab === "contour" ? <div className="mt-3 space-y-2"><label className="flex gap-2"><input type="checkbox" checked={contour.enabled} onChange={(event) => changeContour({ enabled: event.target.checked })} /> Enabled</label><label className="block">Type<select className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1" value={contour.type} onChange={(event) => changeContour({ type: event.target.value as ContourSettings["type"] })}><option value="rectangle">Artwork rectangle</option><option value="silhouette">Silhouette</option><option value="canvas">Full canvas</option></select></label><label className="block">Thickness (mm)<input className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1" type="number" value={contour.thicknessMm} onChange={(event) => changeContour({ thicknessMm: Number(event.target.value) })} /></label><label className="block">Offset (mm)<input className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1" type="number" value={contour.offsetMm} onChange={(event) => changeContour({ offsetMm: Number(event.target.value) })} /></label></div> : null}</aside> : <button type="button" onClick={() => setLeftCollapsed(false)} className="hidden lg:block rounded border border-slate-700 text-slate-300" aria-label="Expand properties panel">›</button>}
+      <div
+        className={`grid min-h-0 gap-3 ${leftCollapsed && rightCollapsed ? "lg:grid-cols-[minmax(0,1fr)]" : leftCollapsed ? "lg:grid-cols-[minmax(0,1fr)_280px]" : rightCollapsed ? "lg:grid-cols-[280px_minmax(0,1fr)]" : "lg:grid-cols-[280px_minmax(0,1fr)_280px]"}`}
+      >
+        {!leftCollapsed ? (
+          <aside className="hidden rounded-xl border border-slate-700 bg-slate-900 p-4 text-xs text-slate-300 lg:block">
+            <div className="flex items-center justify-between">
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setLeftTab("properties")}
+                  className={`rounded px-2 py-1 ${leftTab === "properties" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}
+                >
+                  Properties
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeftTab("contour")}
+                  className={`rounded px-2 py-1 ${leftTab === "contour" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}
+                >
+                  Cut Contour
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setLeftCollapsed(true)}
+                aria-label="Collapse left panel"
+                title="Collapse left panel"
+                className="min-h-9 min-w-9 rounded text-lg hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              >
+                ‹
+              </button>
+            </div>
+            <p className="mt-4 text-slate-400">
+              {leftTab === "properties"
+                ? selectedObject
+                  ? `Selected: ${layerName(selectedObject)}`
+                  : "Select a layer to edit properties."
+                : "Contour settings are available in the Properties area."}
+            </p>
+            {leftTab === "properties" && selectedObject ? (
+              <div className="mt-3 space-y-2">
+                <label className="block">
+                  X
+                  <input
+                    className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1"
+                    type="number"
+                    value={Math.round(selectedLeft)}
+                    onChange={(event) =>
+                      numericChange("left", Number(event.target.value))
+                    }
+                  />
+                </label>
+                <label className="block">
+                  Y
+                  <input
+                    className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1"
+                    type="number"
+                    value={Math.round(selectedTop)}
+                    onChange={(event) =>
+                      numericChange("top", Number(event.target.value))
+                    }
+                  />
+                </label>
+                <label className="block">
+                  Opacity
+                  <input
+                    className="mt-1 w-full"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={selectedObject.opacity ?? 1}
+                    onChange={(event) =>
+                      updateSelected({ opacity: Number(event.target.value) })
+                    }
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => flipSelected("x")}
+                  className="mr-1 rounded border border-slate-700 px-2 py-1"
+                >
+                  Flip H
+                </button>
+                <button
+                  type="button"
+                  onClick={() => flipSelected("y")}
+                  className="rounded border border-slate-700 px-2 py-1"
+                >
+                  Flip V
+                </button>
+              </div>
+            ) : null}
+            {leftTab === "contour" ? (
+              <div className="mt-3 space-y-2">
+                <label className="flex gap-2">
+                  <input
+                    type="checkbox"
+                    checked={contour.enabled}
+                    onChange={(event) =>
+                      changeContour({ enabled: event.target.checked })
+                    }
+                  />{" "}
+                  Enabled
+                </label>
+                <label className="block">
+                  Type
+                  <select
+                    className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1"
+                    value={contour.type}
+                    onChange={(event) =>
+                      changeContour({
+                        type: event.target.value as ContourSettings["type"],
+                      })
+                    }
+                  >
+                    <option value="rectangle">Artwork rectangle</option>
+                    <option value="silhouette">Silhouette</option>
+                    <option value="canvas">Full canvas</option>
+                  </select>
+                </label>
+                <label className="block">
+                  Thickness (mm)
+                  <input
+                    className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1"
+                    type="number"
+                    value={contour.thicknessMm}
+                    onChange={(event) =>
+                      changeContour({ thicknessMm: Number(event.target.value) })
+                    }
+                  />
+                </label>
+                <label className="block">
+                  Offset (mm)
+                  <input
+                    className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1"
+                    type="number"
+                    value={contour.offsetMm}
+                    onChange={(event) =>
+                      changeContour({ offsetMm: Number(event.target.value) })
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+          </aside>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setLeftCollapsed(false)}
+            className="hidden min-h-12 min-w-9 items-center justify-center rounded-r border border-slate-700 bg-slate-900 text-lg text-slate-300 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 lg:flex"
+            aria-label="Expand left panel"
+            title="Expand left panel"
+          >
+            ›
+          </button>
+        )}
         <div
           ref={workspaceRef}
           tabIndex={0}
@@ -1239,447 +1545,652 @@ export function ArtworkEditor({
             </div>
           </div>
         </div>
-        {!rightCollapsed ? <aside className="rounded-xl border border-slate-700 bg-slate-900 p-4 text-xs text-slate-300"><button type="button" onClick={() => setRightCollapsed(true)} className="float-right text-slate-400" aria-label="Collapse layers panel">›</button>
-          <div className="mb-4 border-b border-slate-700 pb-3">
-            <div className="mb-2 flex gap-1">
-              <button
-                type="button"
-                onClick={() => setRightTab("layers")}
-                className={`rounded px-2 py-1 ${rightTab === "layers" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}
-              >
-                Layers
-              </button>
-              <button
-                type="button"
-                onClick={() => setRightTab("history")}
-                className={`rounded px-2 py-1 ${rightTab === "history" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}
-              >
-                History
-              </button>
-            </div>
-            {rightTab === "history" ? (
-              <div className="space-y-1">
-              {history.current.map((entry, index) => (
-                  <button
-                    type="button"
-                    key={index}
-                    onClick={() => void restoreHistory(index)}
-                    className={`block w-full rounded px-2 py-1 text-left ${index === historyIndex.current ? "bg-slate-700 text-slate-100" : "text-slate-400 hover:bg-slate-800"}`}
-                  >
-                  {entry.label} · {new Date(entry.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </button>
-                ))}
+        {!rightCollapsed ? (
+          <aside className="rounded-xl border border-slate-700 bg-slate-900 p-4 text-xs text-slate-300">
+            <button
+              type="button"
+              onClick={() => setRightCollapsed(true)}
+              className="float-right min-h-9 min-w-9 rounded text-lg text-slate-300 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              aria-label="Collapse right panel"
+              title="Collapse right panel"
+            >
+              ›
+            </button>
+            <div className="mb-4 border-b border-slate-700 pb-3">
+              <div className="mb-2 flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setRightTab("layers")}
+                  className={`rounded px-2 py-1 ${rightTab === "layers" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}
+                >
+                  Layers
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRightTab("history")}
+                  className={`rounded px-2 py-1 ${rightTab === "history" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}
+                >
+                  History
+                </button>
               </div>
-            ) : null}
-            {rightTab === "layers" ? (
-              <>
-                <h2 className="text-sm font-semibold text-slate-100">Layers</h2>
-                <div className="mt-2 space-y-1">
-                  {layerObjects.map((object, index) => {
-                    const active = selectedObject === object;
-                    const isLocked = Boolean(
-                      object.lockMovementX &&
-                      object.lockScalingX &&
-                      object.lockRotation,
-                    );
-                    return (
-                      <div
-                        key={`${layerName(object)}-${index}`}
-                        draggable
-                        onDragStart={() => {
-                          draggedLayer.current = object;
-                        }}
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={() => reorderLayer(object)}
-                        className={`flex items-center gap-1 rounded px-2 py-1 ${active ? "bg-emerald-500/20" : "hover:bg-slate-800"}`}
-                      >
-                        <button
-                          type="button"
-                          className="min-w-0 flex-1 truncate text-left"
-                          onClick={() => {
-                            fabricCanvas.current?.setActiveObject(object);
-                            fabricCanvas.current?.requestRenderAll();
-                            refreshSelection();
-                          }}
-                        >
-                          {object instanceof FabricImage ? "▧" : "T"}{" "}
-                          {layerName(object)}
-                        </button>
-                        <button
-                          type="button"
-                      aria-label={`Toggle ${layerName(object)} visibility`}
-                      title="Show or hide layer"
-                      className="min-h-8 min-w-8 rounded hover:bg-slate-700"
-                          onClick={() =>
-                            updateLayer(object, {
-                              visible: object.visible === false,
-                            })
-                          }
-                        >
-                          {object.visible === false ? "◌" : "◉"}
-                        </button>
-                        <button
-                          type="button"
-                      aria-label={`Toggle ${layerName(object)} lock`}
-                      title="Lock or unlock layer"
-                      className="min-h-8 min-w-8 rounded hover:bg-slate-700"
-                          onClick={() =>
-                            updateLayer(object, {
-                              lockMovementX: !isLocked,
-                              lockMovementY: !isLocked,
-                              lockScalingX: !isLocked,
-                              lockScalingY: !isLocked,
-                              lockRotation: !isLocked,
-                            })
-                          }
-                        >
-                          {isLocked ? "🔒" : "🔓"}
-                        </button>
-                        <button
-                          type="button"
-                      aria-label={`Bring ${layerName(object)} forward`}
-                      title="Move layer up"
-                      className="min-h-8 min-w-8 rounded hover:bg-slate-700"
-                          onClick={() => moveLayer(object, "forward")}
-                        >
-                          ↑
-                        </button>
-                        <button
-                          type="button"
-                      aria-label={`Send ${layerName(object)} backward`}
-                      title="Move layer down"
-                      className="min-h-8 min-w-8 rounded hover:bg-slate-700"
-                          onClick={() => moveLayer(object, "backward")}
-                        >
-                          ↓
-                        </button>
-                        <button
-                          type="button"
-                      aria-label={`Duplicate ${layerName(object)}`}
-                      title="Duplicate layer"
-                      className="min-h-8 min-w-8 rounded hover:bg-slate-700"
-                          onClick={() => void duplicateLayer(object)}
-                        >
-                          ＋
-                        </button>
-                        <button
-                          type="button"
-                      aria-label={`Delete ${layerName(object)}`}
-                      title="Delete layer"
-                      className="min-h-8 min-w-8 rounded text-red-300 hover:bg-red-900/40"
-                          onClick={() => deleteLayer(object)}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  })}
+              {rightTab === "history" ? (
+                <div className="space-y-1">
+                  {history.current.map((entry, index) => (
+                    <button
+                      type="button"
+                      key={index}
+                      onClick={() => void restoreHistory(index)}
+                      className={`block w-full rounded px-2 py-1 text-left ${index === historyIndex.current ? "bg-slate-700 text-slate-100" : "text-slate-400 hover:bg-slate-800"}`}
+                    >
+                      {entry.label} ·{" "}
+                      {new Date(entry.timestamp).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </button>
+                  ))}
                 </div>
-              </>
-            ) : null}
-          </div>
-          <div className="mb-2 flex gap-1"><button type="button" onClick={() => setLeftTab("properties")} className={`rounded px-2 py-1 ${leftTab === "properties" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}>Properties</button><button type="button" onClick={() => setLeftTab("contour")} className={`rounded px-2 py-1 ${leftTab === "contour" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}>Cut Contour</button></div>
-          <h2 className="text-sm font-semibold text-slate-100">{leftTab === "contour" ? "Cut Contour" : "Properties"}</h2>
-          {!selectedObject ? (
-            <p className="mt-3 text-slate-500">
-              Select artwork to edit its properties.
-            </p>
-          ) : (
-            <>
-              <label className="mt-3 block space-y-1">
-                <span>Layer name</span>
-                <input
-                  value={layerName(selectedObject)}
-                  onChange={(event) =>
-                    updateLayer(selectedObject, { name: event.target.value })
-                  }
-                  className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
-                />
-              </label>
-              {selectedObject instanceof IText ? (
-                <div className="mt-3 space-y-2 border-t border-slate-700 pt-3">
-                  <label className="block space-y-1">
-                    <span>Text</span>
-                    <textarea
-                      value={selectedObject.text ?? ""}
+              ) : null}
+              {rightTab === "layers" ? (
+                <>
+                  <h2 className="text-sm font-semibold text-slate-100">
+                    Layers
+                  </h2>
+                <div className="mt-2 max-h-[420px] space-y-1 overflow-y-auto pr-1">
+                    {layerObjects.map((object, index) => {
+                      const active = selectedObject === object;
+                      const isLocked = Boolean(
+                        object.lockMovementX &&
+                        object.lockScalingX &&
+                        object.lockRotation,
+                      );
+                      return (
+                        <div
+                          key={`${layerName(object)}-${index}`}
+                          draggable
+                          onDragStart={() => {
+                            draggedLayer.current = object;
+                          }}
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={() => reorderLayer(object)}
+                          className={`flex items-center gap-1 rounded px-2 py-1 ${active ? "bg-emerald-500/20" : "hover:bg-slate-800"}`}
+                        >
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 truncate text-left"
+                            onClick={() => {
+                              fabricCanvas.current?.setActiveObject(object);
+                              fabricCanvas.current?.requestRenderAll();
+                              refreshSelection();
+                            }}
+                          >
+                            {object instanceof FabricImage ? "▧" : "T"}{" "}
+                            {layerName(object)}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Toggle ${layerName(object)} visibility`}
+                            title="Show or hide layer"
+                            className="min-h-8 min-w-8 rounded hover:bg-slate-700"
+                            onClick={() =>
+                              updateLayer(object, {
+                                visible: object.visible === false,
+                              })
+                            }
+                          >
+                            {object.visible === false ? "◌" : "◉"}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Toggle ${layerName(object)} lock`}
+                            title="Lock or unlock layer"
+                            className="min-h-8 min-w-8 rounded hover:bg-slate-700"
+                            onClick={() =>
+                              updateLayer(object, {
+                                lockMovementX: !isLocked,
+                                lockMovementY: !isLocked,
+                                lockScalingX: !isLocked,
+                                lockScalingY: !isLocked,
+                                lockRotation: !isLocked,
+                              })
+                            }
+                          >
+                            {isLocked ? "🔒" : "🔓"}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Bring ${layerName(object)} forward`}
+                            title="Move layer up"
+                            className="hidden"
+                            onClick={() => moveLayer(object, "forward")}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Send ${layerName(object)} backward`}
+                            title="Move layer down"
+                            className="hidden"
+                            onClick={() => moveLayer(object, "backward")}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Duplicate ${layerName(object)}`}
+                            title="Duplicate layer"
+                            className="hidden"
+                            onClick={() => void duplicateLayer(object)}
+                          >
+                            ＋
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Delete ${layerName(object)}`}
+                            title="Delete layer"
+                            className="hidden"
+                            onClick={() => deleteLayer(object)}
+                          >
+                            ×
+                          </button>
+                          <div className="group relative">
+                            <button
+                              type="button"
+                              aria-label={`More actions for ${layerName(object)}`}
+                              title="More layer actions"
+                              className="min-h-8 min-w-8 rounded text-lg hover:bg-slate-700"
+                            >
+                              ⋯
+                            </button>
+                            <div className="absolute right-0 top-9 z-50 hidden w-36 rounded border border-slate-700 bg-slate-950 p-1 shadow-xl group-focus-within:block">
+                              <button
+                                type="button"
+                                className="block w-full rounded px-2 py-1 text-left hover:bg-slate-800"
+                                onClick={() => moveLayer(object, "forward")}
+                              >
+                                Move up
+                              </button>
+                              <button
+                                type="button"
+                                className="block w-full rounded px-2 py-1 text-left hover:bg-slate-800"
+                                onClick={() => moveLayer(object, "backward")}
+                              >
+                                Move down
+                              </button>
+                              <button
+                                type="button"
+                                className="block w-full rounded px-2 py-1 text-left hover:bg-slate-800"
+                                onClick={() => void duplicateLayer(object)}
+                              >
+                                Duplicate
+                              </button>
+                              <button
+                                type="button"
+                                className="block w-full rounded px-2 py-1 text-left text-red-300 hover:bg-red-900/40"
+                                onClick={() => deleteLayer(object)}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : null}
+            </div>
+            <h2 className="text-sm font-semibold text-slate-100">Properties</h2>
+            {!selectedObject ? (
+              <p className="mt-3 text-slate-500">
+                Select artwork to edit its properties.
+              </p>
+            ) : (
+              <>
+                <label className="mt-3 block space-y-1">
+                  <span>Layer name</span>
+                  <input
+                    value={layerName(selectedObject)}
+                    onChange={(event) =>
+                      updateLayer(selectedObject, { name: event.target.value })
+                    }
+                    className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
+                  />
+                </label>
+                {selectedObject instanceof IText ? (
+                  <div className="mt-3 space-y-2 border-t border-slate-700 pt-3">
+                    <label className="block space-y-1">
+                      <span>Text</span>
+                      <textarea
+                        value={selectedObject.text ?? ""}
+                        onChange={(event) =>
+                          updateLayer(selectedObject, {
+                            text: event.target.value,
+                          })
+                        }
+                        className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                      />
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="space-y-1">
+                        <span>Font size</span>
+                        <input
+                          type="number"
+                          value={selectedObject.fontSize ?? 24}
+                          onChange={(event) =>
+                            updateLayer(selectedObject, {
+                              fontSize: Number(event.target.value),
+                            })
+                          }
+                          className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span>Font family</span>
+                        <select
+                          value={selectedObject.fontFamily ?? "Arial"}
+                          onChange={(event) =>
+                            updateLayer(selectedObject, {
+                              fontFamily: event.target.value,
+                            })
+                          }
+                          className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                        >
+                          {fallbackFonts.map((font) => (
+                            <option
+                              key={font}
+                              value={font}
+                              style={{ fontFamily: font }}
+                            >
+                              {font}
+                            </option>
+                          ))}
+                          <option value={selectedObject.fontFamily ?? "Arial"}>
+                            {selectedObject.fontFamily ?? "Custom font"}
+                          </option>
+                        </select>
+                      </label>
+                    </div>
+                    <input
+                      type="range"
+                      min="8"
+                      max="300"
+                      value={selectedObject.fontSize ?? 24}
                       onChange={(event) =>
-                        updateLayer(selectedObject, {
-                          text: event.target.value,
+                        updateLayer(
+                          selectedObject,
+                          { fontSize: Number(event.target.value) },
+                          "Changed font size",
+                        )
+                      }
+                      className="w-full"
+                      aria-label="Font size slider"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="space-y-1">
+                        <span>Alignment</span>
+                        <select
+                          value={selectedObject.textAlign ?? "left"}
+                          onChange={(event) =>
+                            updateLayer(
+                              selectedObject,
+                              { textAlign: event.target.value },
+                              "Changed text alignment",
+                            )
+                          }
+                          className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                        >
+                          <option value="left">Left</option>
+                          <option value="center">Centre</option>
+                          <option value="right">Right</option>
+                          <option value="justify">Justify</option>
+                        </select>
+                      </label>
+                      <label className="space-y-1">
+                        <span>Letter spacing</span>
+                        <input
+                          type="number"
+                          value={selectedObject.charSpacing ?? 0}
+                          onChange={(event) =>
+                            updateLayer(
+                              selectedObject,
+                              { charSpacing: Number(event.target.value) },
+                              "Changed letter spacing",
+                            )
+                          }
+                          className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                        />
+                      </label>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateLayer(selectedObject, {
+                            fontWeight:
+                              selectedObject.fontWeight === "bold"
+                                ? "normal"
+                                : "bold",
+                          })
+                        }
+                        className="rounded border border-slate-700 px-2 py-1"
+                      >
+                        Bold
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateLayer(selectedObject, {
+                            fontStyle:
+                              selectedObject.fontStyle === "italic"
+                                ? "normal"
+                                : "italic",
+                          })
+                        }
+                        className="rounded border border-slate-700 px-2 py-1"
+                      >
+                        Italic
+                      </button>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <label className="block">
+                        <span>Text colour</span>
+                        <div className="mt-1 flex gap-2">
+                          <input
+                            type="color"
+                            value={
+                              typeof selectedObject.fill === "string" &&
+                              /^#[0-9a-f]{6}$/i.test(selectedObject.fill)
+                                ? selectedObject.fill
+                                : "#ffffff"
+                            }
+                            onChange={(event) =>
+                              changeTextColour(
+                                selectedObject,
+                                event.target.value,
+                              )
+                            }
+                            className="h-8 w-10 rounded"
+                          />
+                          <input
+                            aria-label="Text colour hex"
+                            value={
+                              typeof selectedObject.fill === "string"
+                                ? selectedObject.fill
+                                : "#ffffff"
+                            }
+                            onChange={(event) =>
+                              changeTextColour(
+                                selectedObject,
+                                event.target.value,
+                              )
+                            }
+                            className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                          />
+                        </div>
+                      </label>
+                      <div className="flex flex-wrap gap-1">
+                        {recentColors.map((colour) => (
+                          <button
+                            type="button"
+                            key={colour}
+                            title={`Use ${colour}`}
+                            aria-label={`Use colour ${colour}`}
+                            onClick={() =>
+                              changeTextColour(selectedObject, colour)
+                            }
+                            className="h-7 w-7 rounded border border-slate-500"
+                            style={{ backgroundColor: colour }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      ["X", selectedLeft, "left"],
+                      ["Y", selectedTop, "top"],
+                      ["Width", selectedWidth, "scaleX"],
+                      ["Height", selectedHeight, "scaleY"],
+                      ["Rotation", selectedObject.angle ?? 0, "angle"],
+                    ] as const
+                  ).map(([label, value, property]) => (
+                    <label key={label} className="space-y-1">
+                      <span>{label}</span>
+                      <input
+                        type="number"
+                        value={Math.round(value * 100) / 100}
+                        disabled={locked}
+                        onChange={(event) =>
+                          numericChange(property, Number(event.target.value))
+                        }
+                        className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <label className="mt-3 block space-y-1">
+                  <span>Opacity</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={selectedObject.opacity ?? 1}
+                    disabled={locked}
+                    onChange={(event) =>
+                      updateSelected({ opacity: Number(event.target.value) })
+                    }
+                    className="w-full"
+                  />
+                </label>
+                <div className="hidden">
+                  <h3 className="font-semibold text-slate-100">Cut contour</h3>
+                  <label className="mt-2 flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={contour.enabled}
+                      onChange={(event) =>
+                        changeContour({ enabled: event.target.checked })
+                      }
+                    />{" "}
+                    Enabled
+                  </label>
+                  <label className="mt-2 block space-y-1">
+                    <span>Contour type</span>
+                    <select
+                      value={contour.type}
+                      onChange={(event) =>
+                        changeContour({
+                          type: event.target.value as ContourSettings["type"],
                         })
                       }
                       className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
-                    />
+                    >
+                      <option value="rectangle">Artwork rectangle</option>
+                      <option value="silhouette">
+                        Artwork silhouette contour
+                      </option>
+                      <option value="canvas">Full canvas contour</option>
+                    </select>
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <label className="mt-2 block space-y-1">
+                    <span>Colour</span>
+                    <select
+                      value={contour.colour}
+                      onChange={(event) =>
+                        changeContour({ colour: event.target.value })
+                      }
+                      className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                    >
+                      <option value="#000000">Black</option>
+                      <option value="#ffffff">White</option>
+                      <option value="#ff00ff">Magenta</option>
+                      <option value="#00aaff">
+                        Custom colour (edit below)
+                      </option>
+                    </select>
+                  </label>
+                  <input
+                    aria-label="Custom contour colour"
+                    type="color"
+                    value={contour.colour}
+                    onChange={(event) =>
+                      changeContour({ colour: event.target.value })
+                    }
+                    className="mt-2 h-8 w-full rounded"
+                  />
+                  <div className="mt-2 grid grid-cols-2 gap-2">
                     <label className="space-y-1">
-                      <span>Font size</span>
+                      <span>Thickness (mm)</span>
                       <input
                         type="number"
-                        value={selectedObject.fontSize ?? 24}
+                        min="0.01"
+                        step="0.01"
+                        value={contour.thicknessMm}
                         onChange={(event) =>
-                          updateLayer(selectedObject, {
-                            fontSize: Number(event.target.value),
+                          changeContour({
+                            thicknessMm: Math.max(
+                              0.01,
+                              Number(event.target.value),
+                            ),
                           })
                         }
                         className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
                       />
                     </label>
                     <label className="space-y-1">
-                      <span>Font family</span>
-                      <select
-                        value={selectedObject.fontFamily ?? "Arial"}
+                      <span>Offset (mm)</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={contour.offsetMm}
                         onChange={(event) =>
-                          updateLayer(selectedObject, {
-                            fontFamily: event.target.value,
+                          changeContour({
+                            offsetMm: Math.max(0, Number(event.target.value)),
                           })
                         }
                         className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
-                      >{fallbackFonts.map((font) => <option key={font} value={font} style={{ fontFamily: font }}>{font}</option>)}<option value={selectedObject.fontFamily ?? "Arial"}>{selectedObject.fontFamily ?? "Custom font"}</option></select>
+                      />
                     </label>
                   </div>
-                  <input type="range" min="8" max="300" value={selectedObject.fontSize ?? 24} onChange={(event) => updateLayer(selectedObject, { fontSize: Number(event.target.value) }, "Changed font size")} className="w-full" aria-label="Font size slider" />
-                  <div className="grid grid-cols-2 gap-2"><label className="space-y-1"><span>Alignment</span><select value={selectedObject.textAlign ?? "left"} onChange={(event) => updateLayer(selectedObject, { textAlign: event.target.value }, "Changed text alignment")} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"><option value="left">Left</option><option value="center">Centre</option><option value="right">Right</option><option value="justify">Justify</option></select></label><label className="space-y-1"><span>Letter spacing</span><input type="number" value={selectedObject.charSpacing ?? 0} onChange={(event) => updateLayer(selectedObject, { charSpacing: Number(event.target.value) }, "Changed letter spacing")} className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1" /></label></div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateLayer(selectedObject, {
-                          fontWeight:
-                            selectedObject.fontWeight === "bold"
-                              ? "normal"
-                              : "bold",
-                        })
-                      }
-                      className="rounded border border-slate-700 px-2 py-1"
-                    >
-                      Bold
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        updateLayer(selectedObject, {
-                          fontStyle:
-                            selectedObject.fontStyle === "italic"
-                              ? "normal"
-                              : "italic",
-                        })
-                      }
-                      className="rounded border border-slate-700 px-2 py-1"
-                    >
-                      Italic
-                    </button>
-                  </div>
-                  <div className="mt-3 space-y-2"><label className="block"><span>Text colour</span><div className="mt-1 flex gap-2"><input type="color" value={typeof selectedObject.fill === "string" && /^#[0-9a-f]{6}$/i.test(selectedObject.fill) ? selectedObject.fill : "#ffffff"} onChange={(event) => changeTextColour(selectedObject, event.target.value)} className="h-8 w-10 rounded" /><input aria-label="Text colour hex" value={typeof selectedObject.fill === "string" ? selectedObject.fill : "#ffffff"} onChange={(event) => changeTextColour(selectedObject, event.target.value)} className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-950 px-2 py-1" /></div></label><div className="flex flex-wrap gap-1">{recentColors.map((colour) => <button type="button" key={colour} title={`Use ${colour}`} aria-label={`Use colour ${colour}`} onClick={() => changeTextColour(selectedObject, colour)} className="h-7 w-7 rounded border border-slate-500" style={{ backgroundColor: colour }} />)}</div></div>
+                  {contour.type === "silhouette" ? (
+                    <p className="mt-2 text-[10px] text-amber-400">
+                      Silhouette preview currently falls back to the transformed
+                      artwork bounds.
+                    </p>
+                  ) : null}
                 </div>
-              ) : null}
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                {(
-                  [
-                    ["X", selectedLeft, "left"],
-                    ["Y", selectedTop, "top"],
-                    ["Width", selectedWidth, "scaleX"],
-                    ["Height", selectedHeight, "scaleY"],
-                    ["Rotation", selectedObject.angle ?? 0, "angle"],
-                  ] as const
-                ).map(([label, value, property]) => (
-                  <label key={label} className="space-y-1">
-                    <span>{label}</span>
-                    <input
-                      type="number"
-                      value={Math.round(value * 100) / 100}
-                      disabled={locked}
-                      onChange={(event) =>
-                        numericChange(property, Number(event.target.value))
-                      }
-                      className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-slate-100"
-                    />
-                  </label>
-                ))}
-              </div>
-              <label className="mt-3 block space-y-1">
-                <span>Opacity</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={selectedObject.opacity ?? 1}
-                  disabled={locked}
-                  onChange={(event) =>
-                    updateSelected({ opacity: Number(event.target.value) })
-                  }
-                  className="w-full"
-                />
-              </label>
-              <div className="mt-4 border-t border-slate-700 pt-3">
-                <h3 className="font-semibold text-slate-100">Cut contour</h3>
-                <label className="mt-2 flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={contour.enabled}
-                    onChange={(event) =>
-                      changeContour({ enabled: event.target.checked })
-                    }
-                  />{" "}
-                  Enabled
-                </label>
-                <label className="mt-2 block space-y-1">
-                  <span>Contour type</span>
-                  <select
-                    value={contour.type}
-                    onChange={(event) =>
-                      changeContour({
-                        type: event.target.value as ContourSettings["type"],
-                      })
-                    }
-                    className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                <div className="mt-3 grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => alignSelected("left")}
+                    className="rounded border border-slate-700 px-2 py-1"
                   >
-                    <option value="rectangle">Artwork rectangle</option>
-                    <option value="silhouette">
-                      Artwork silhouette contour
-                    </option>
-                    <option value="canvas">Full canvas contour</option>
-                  </select>
-                </label>
-                <label className="mt-2 block space-y-1">
-                  <span>Colour</span>
-                  <select
-                    value={contour.colour}
-                    onChange={(event) =>
-                      changeContour({ colour: event.target.value })
-                    }
-                    className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
+                    Left
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alignSelected("right")}
+                    className="rounded border border-slate-700 px-2 py-1"
                   >
-                    <option value="#000000">Black</option>
-                    <option value="#ffffff">White</option>
-                    <option value="#ff00ff">Magenta</option>
-                    <option value="#00aaff">Custom colour (edit below)</option>
-                  </select>
-                </label>
-                <input
-                  aria-label="Custom contour colour"
-                  type="color"
-                  value={contour.colour}
-                  onChange={(event) =>
-                    changeContour({ colour: event.target.value })
-                  }
-                  className="mt-2 h-8 w-full rounded"
-                />
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <label className="space-y-1">
-                    <span>Thickness (mm)</span>
-                    <input
-                      type="number"
-                      min="0.01"
-                      step="0.01"
-                      value={contour.thicknessMm}
-                      onChange={(event) =>
-                        changeContour({
-                          thicknessMm: Math.max(
-                            0.01,
-                            Number(event.target.value),
-                          ),
-                        })
-                      }
-                      className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
-                    />
-                  </label>
-                  <label className="space-y-1">
-                    <span>Offset (mm)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.1"
-                      value={contour.offsetMm}
-                      onChange={(event) =>
-                        changeContour({
-                          offsetMm: Math.max(0, Number(event.target.value)),
-                        })
-                      }
-                      className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1"
-                    />
-                  </label>
+                    Right
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alignSelected("top")}
+                    className="rounded border border-slate-700 px-2 py-1"
+                  >
+                    Top
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alignSelected("bottom")}
+                    className="rounded border border-slate-700 px-2 py-1"
+                  >
+                    Bottom
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alignSelected("centerX")}
+                    className="rounded border border-slate-700 px-2 py-1"
+                  >
+                    Centre H
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => alignSelected("centerY")}
+                    className="rounded border border-slate-700 px-2 py-1"
+                  >
+                    Centre V
+                  </button>
                 </div>
-                {contour.type === "silhouette" ? (
-                  <p className="mt-2 text-[10px] text-amber-400">
-                    Silhouette preview currently falls back to the transformed
-                    artwork bounds.
+                <div className="mt-3 space-y-1 text-[11px]">
+                  <p>
+                    Resolution:{" "}
+                    {naturalWidth ? `${naturalWidth} px` : "Unknown"}
                   </p>
-                ) : null}
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => alignSelected("left")}
-                  className="rounded border border-slate-700 px-2 py-1"
-                >
-                  Left
-                </button>
-                <button
-                  type="button"
-                  onClick={() => alignSelected("right")}
-                  className="rounded border border-slate-700 px-2 py-1"
-                >
-                  Right
-                </button>
-                <button
-                  type="button"
-                  onClick={() => alignSelected("top")}
-                  className="rounded border border-slate-700 px-2 py-1"
-                >
-                  Top
-                </button>
-                <button
-                  type="button"
-                  onClick={() => alignSelected("bottom")}
-                  className="rounded border border-slate-700 px-2 py-1"
-                >
-                  Bottom
-                </button>
-                <button
-                  type="button"
-                  onClick={() => alignSelected("centerX")}
-                  className="rounded border border-slate-700 px-2 py-1"
-                >
-                  Centre H
-                </button>
-                <button
-                  type="button"
-                  onClick={() => alignSelected("centerY")}
-                  className="rounded border border-slate-700 px-2 py-1"
-                >
-                  Centre V
-                </button>
-              </div>
-              <div className="mt-3 space-y-1 text-[11px]">
-                <p>
-                  Resolution: {naturalWidth ? `${naturalWidth} px` : "Unknown"}
-                </p>
-                <p>
-                  Estimated print DPI:{" "}
-                  {estimatedDpi ? Math.round(estimatedDpi) : "Unknown"}
-                </p>
-                <p>Lock: {locked ? "Locked" : "Unlocked"}</p>
-              </div>
-              <div className="mt-4 space-y-1 border-t border-slate-700 pt-3">
-                {bleed && !bleedCovered ? (
-                  <p className="text-amber-400">⚠ Bleed not covered</p>
-                ) : null}
-                {outsideSafe ? (
-                  <p className="text-amber-400">⚠ Artwork outside safe area</p>
-                ) : null}
-                {lowResolution ? (
-                  <p className="text-amber-400">⚠ Low image resolution</p>
-                ) : null}
-                {bleedCovered && !outsideSafe && !lowResolution ? (
-                  <p className="text-emerald-400">✓ Ready to print</p>
-                ) : null}
-              </div>
-            </>
-          )}
-        </aside> : <button type="button" onClick={() => setRightCollapsed(false)} className="hidden lg:block rounded border border-slate-700 text-slate-300" aria-label="Expand layers panel">‹</button>}
+                  <p>
+                    Estimated print DPI:{" "}
+                    {estimatedDpi ? Math.round(estimatedDpi) : "Unknown"}
+                  </p>
+                  <p>Lock: {locked ? "Locked" : "Unlocked"}</p>
+                </div>
+                <div className="mt-4 space-y-1 border-t border-slate-700 pt-3">
+                  {bleed && !bleedCovered ? (
+                    <p className="text-amber-400">⚠ Bleed not covered</p>
+                  ) : null}
+                  {outsideSafe ? (
+                    <p className="text-amber-400">
+                      ⚠ Artwork outside safe area
+                    </p>
+                  ) : null}
+                  {lowResolution ? (
+                    <p className="text-amber-400">⚠ Low image resolution</p>
+                  ) : null}
+                  {bleedCovered && !outsideSafe && !lowResolution ? (
+                    <p className="text-emerald-400">✓ Ready to print</p>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </aside>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setRightCollapsed(false)}
+            className="hidden min-h-12 min-w-9 items-center justify-center rounded-l border border-slate-700 bg-slate-900 text-lg text-slate-300 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 lg:flex"
+            aria-label="Expand right panel"
+            title="Expand right panel"
+          >
+            ‹
+          </button>
+        )}
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-slate-400"><span>Selected: {selectedObject ? layerName(selectedObject) : "None"}</span><span>Zoom: {Math.round(zoom * 100)}%</span><span>Template: {Math.round((width / dpi) * 25.4)} × {Math.round((height / dpi) * 25.4)} mm · {dpi} DPI</span><span>{status === "dirty" ? "Unsaved" : status === "saving" ? "Saving" : status === "saved" ? "Saved" : status === "error" ? "Failed" : "Saved"}</span></div>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-[11px] text-slate-400">
+        <span>
+          Selected: {selectedObject ? layerName(selectedObject) : "None"}
+        </span>
+        <span>Zoom: {Math.round(zoom * 100)}%</span>
+        <span>
+          Template: {Math.round((width / dpi) * 25.4)} ×{" "}
+          {Math.round((height / dpi) * 25.4)} mm · {dpi} DPI
+        </span>
+        <span>
+          {status === "dirty"
+            ? "Unsaved"
+            : status === "saving"
+              ? "Saving"
+              : status === "saved"
+                ? "Saved"
+                : status === "error"
+                  ? "Failed"
+                  : "Saved"}
+        </span>
+      </div>
     </div>
   );
 }

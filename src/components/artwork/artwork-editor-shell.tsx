@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { ArtworkEditor } from "./artwork-editor";
-import { saveArtworkExportAction, saveArtworkStateAction } from "@/app/(admin)/orders/actions";
+import { saveArtworkExportAction, saveArtworkStateAction, uploadArtworkLayerAction } from "@/app/(admin)/orders/actions";
 
 /** Serializable saved-state that comes from the server. */
 export interface ArtworkSavedState {
@@ -93,6 +93,7 @@ export function ArtworkEditorShell({
     form.set("positionY", String(settings.positionY));
     await saveArtworkStateAction(form);
   };
+  const persistImage = async (file: File) => { const form = new FormData(); form.set("orderItemId", orderItemId); form.set("file", file); const relative = await uploadArtworkLayerAction(form); return `/api/local-files?path=${encodeURIComponent(relative)}`; };
 
   return (
     <div className="space-y-4">
@@ -125,6 +126,7 @@ export function ArtworkEditorShell({
         onExport={handleExport}
         exportPending={isPending}
         onSave={handleSave}
+        onPersistImage={persistImage}
       />
     </div>
   );
