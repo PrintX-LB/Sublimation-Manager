@@ -113,7 +113,7 @@ export function OrderActionsMenu({
             </button>
           </form>
 
-          {eligible ? <form action={permanentlyDeleteTestOrderAction} onSubmit={(event) => { const confirmation = window.prompt(`Permanently delete ${order.orderNumber}? Type the exact order number to confirm.`); if (confirmation !== order.orderNumber) event.preventDefault(); else setOpen(false); }}><input type="hidden" name="orderId" value={order.id}/><input type="hidden" name="confirmation" value={order.orderNumber}/><button type="submit" className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50"><XCircle size={14}/>Permanently Delete Test Order</button></form> : null}
+          {eligible ? <form action={permanentlyDeleteTestOrderAction} autoComplete="off" onSubmit={(event) => { const confirmation = window.prompt(`Permanently delete ${order.orderNumber}? Type the exact order number to confirm.`); if (confirmation !== order.orderNumber) event.preventDefault(); else setOpen(false); }}><input type="hidden" name="orderId" value={order.id}/><input type="hidden" name="deleteOrderConfirmation" autoComplete="new-password" value={order.orderNumber}/><button type="submit" className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50"><XCircle size={14}/>Permanently Delete Test Order</button></form> : null}
 
           {/* Change status action (if not cancelled) */}
           {!isCancelled && (
@@ -130,16 +130,9 @@ export function OrderActionsMenu({
                   className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
                 >
                   <option value="Draft">Draft</option>
-                  <option value="Awaiting customer files">Awaiting files</option>
-                  <option value="Design preparation">Design prep</option>
-                  <option value="Awaiting customer approval">Awaiting approval</option>
-                  <option value="Approved">Approved</option>
                   <option value="Ready to print">Ready to print</option>
                   <option value="In production">In production</option>
                   <option value="Completed">Completed</option>
-                  <option value="Ready for collection">Ready collection</option>
-                  <option value="Shipped">Shipped</option>
-                  <option value="Delivered">Delivered</option>
                 </select>
               </form>
             </div>

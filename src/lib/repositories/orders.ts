@@ -89,35 +89,39 @@ export function paymentState(
 }
 
 export async function getOrderStats() {
-  const allOrders = await prisma.order.findMany({
-    include: {
-      payments: {
-        select: {
-          amount: true,
+  const [openCount, awaitingApprovalCount, readyToPrintCount, allActivePaymentsAndTotals] = await prisma.$transaction([
+    prisma.order.count({
+      where: {
+        status: { in: ["Draft", "Ready to print", "In production"] },
+      },
+    }),
+    prisma.order.count({
+      where: {
+        status: "Draft",
+      },
+    }),
+    prisma.order.count({
+      where: {
+        status: "Ready to print",
+      },
+    }),
+    prisma.order.findMany({
+      where: {
+        status: { not: "Cancelled" },
+      },
+      select: {
+        total: true,
+        payments: {
+          select: {
+            amount: true,
+          },
         },
       },
-    },
-  });
-
-  const openStatuses = [
-    "Draft",
-    "Awaiting customer files",
-    "Design preparation",
-    "Awaiting customer approval",
-    "Approved",
-    "Ready to print",
-    "In production",
-    "Ready for collection",
-    "Shipped",
-  ];
-
-  const openOrdersCount = allOrders.filter((o) => openStatuses.includes(o.status)).length;
-  const awaitingApprovalCount = allOrders.filter((o) => o.status === "Awaiting customer approval").length;
-  const readyToPrintCount = allOrders.filter((o) => o.status === "Ready to print").length;
+    }),
+  ]);
 
   let outstandingBalance = 0;
-  for (const order of allOrders) {
-    if (order.status === "Cancelled") continue;
+  for (const order of allActivePaymentsAndTotals) {
     const paid = order.payments.reduce((sum, p) => sum + Number(p.amount), 0);
     const total = Number(order.total);
     if (paid < total) {
@@ -126,7 +130,7 @@ export async function getOrderStats() {
   }
 
   return {
-    openOrders: openOrdersCount,
+    openOrders: openCount,
     awaitingCustomerApproval: awaitingApprovalCount,
     readyToPrint: readyToPrintCount,
     outstandingBalance,

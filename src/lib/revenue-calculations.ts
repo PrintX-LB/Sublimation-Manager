@@ -36,6 +36,13 @@ export interface PaymentWithRelations {
   };
 }
 
+export function isRecognizedOrder(order: Pick<OrderWithRelations, "status" | "id">, allPayments: Record<string, number>) {
+  const status = order.status.toLowerCase();
+  if (status === "cancelled") return false;
+  if (status === "draft" && (allPayments[order.id] ?? 0) <= 0) return false;
+  return true;
+}
+
 export function calculateRevenueStats(
   orders: OrderWithRelations[],
   paymentsInPeriod: PaymentWithRelations[],
@@ -47,9 +54,8 @@ export function calculateRevenueStats(
   let completedOrdersCount = 0;
 
   for (const order of orders) {
-    // Exclude Cancelled and Draft orders from revenue metrics
     const normalizedStatus = order.status.toLowerCase();
-    if (normalizedStatus === "cancelled" || normalizedStatus === "draft") {
+    if (!isRecognizedOrder(order, allPaymentsForPeriodOrders)) {
       continue;
     }
 
@@ -79,6 +85,7 @@ export function calculateRevenueStats(
 
   // Profit: Order Revenue - Costs
   const estimatedProfit = orderRevenue - estimatedCost;
+  const recognizedOrders = orders.filter((order) => isRecognizedOrder(order, allPaymentsForPeriodOrders));
 
   return {
     orderRevenue,
@@ -87,5 +94,6 @@ export function calculateRevenueStats(
     estimatedCost,
     estimatedProfit,
     completedOrdersCount,
+    averageOrderValue: recognizedOrders.length ? orderRevenue / recognizedOrders.length : 0,
   };
 }

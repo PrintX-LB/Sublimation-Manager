@@ -60,6 +60,9 @@ interface RevenueDashboardProps {
     estimatedProfit: number;
     completedOrdersCount: number;
     revenueThisYear: number;
+    revenueToday: number;
+    revenueThisMonth: number;
+    averageOrderValue: number;
   };
   filters: {
     year: number;
@@ -613,9 +616,9 @@ export function RevenueDashboard({
             <TrendingUp size={18} />
           </span>
           <p className="mt-4 text-xl font-bold text-slate-50">
-            {formatUSD(stats.orderRevenue)}
+          {formatUSD(stats.revenueToday)}
           </p>
-          <p className="mt-1 text-xs text-slate-500 font-medium">Order Revenue</p>
+          <p className="mt-1 text-xs text-slate-500 font-medium">Revenue Today</p>
         </article>
 
         <article className="rounded-2xl border border-slate-800 bg-[#1e293b] p-4 shadow-sm">
@@ -623,9 +626,9 @@ export function RevenueDashboard({
             <Coins size={18} />
           </span>
           <p className="mt-4 text-xl font-bold text-emerald-400">
-            {formatUSD(stats.collectedRevenue)}
+            {formatUSD(stats.revenueThisMonth)}
           </p>
-          <p className="mt-1 text-xs text-slate-500 font-medium">Collected Revenue</p>
+          <p className="mt-1 text-xs text-slate-500 font-medium">Revenue This Month</p>
         </article>
 
         <article className="rounded-2xl border border-slate-800 bg-[#1e293b] p-4 shadow-sm">
@@ -643,9 +646,9 @@ export function RevenueDashboard({
             <Briefcase size={18} />
           </span>
           <p className="mt-4 text-xl font-bold text-slate-50">
-            {formatUSD(stats.estimatedCost)}
+            {formatUSD(stats.revenueThisYear)}
           </p>
-          <p className="mt-1 text-xs text-slate-500 font-medium">Estimated Cost</p>
+          <p className="mt-1 text-xs text-slate-500 font-medium">Revenue This Year</p>
         </article>
 
         <article className="rounded-2xl border border-slate-800 bg-[#1e293b] p-4 shadow-sm">
@@ -662,8 +665,8 @@ export function RevenueDashboard({
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-500/10 text-slate-400">
             <Briefcase size={18} />
           </span>
-          <p className="mt-4 text-xl font-bold text-slate-50">{stats.completedOrdersCount}</p>
-          <p className="mt-1 text-xs text-slate-500 font-medium">Completed Orders</p>
+          <p className="mt-4 text-xl font-bold text-slate-50">{formatUSD(stats.averageOrderValue)}</p>
+          <p className="mt-1 text-xs text-slate-500 font-medium">Average Order Value</p>
         </article>
       </section>
 

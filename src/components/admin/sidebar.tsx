@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   Settings,
   ShoppingCart,
+  ClipboardList,
   Users,
   TrendingUp,
   X,
@@ -16,6 +17,8 @@ import {
 const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/orders", label: "Orders", icon: ShoppingCart },
+  { href: "/production", label: "Production", icon: ClipboardList },
+  { href: "/production/sheet-builder", label: "Print Sheet Builder", icon: FileImage },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/revenue", label: "Revenue", icon: TrendingUp },

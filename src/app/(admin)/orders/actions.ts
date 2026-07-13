@@ -14,7 +14,7 @@ import { prisma } from "@/lib/db/prisma";
 import { saveUploadedFile } from "@/lib/files/local-file-storage";
 import { saveArtworkFile } from "@/lib/files/artwork-storage";
 import { requireAdmin } from "@/lib/admin-session";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { ensureOrderFolder } from "@/lib/order-storage";
@@ -142,6 +142,22 @@ export async function createOrderAction(
     const order = await createOrder(parsed.data);
     const customer = await prisma.customer.findUnique({ where: { id: order.customerId }, select: { fullName: true } });
     await ensureOrderFolder(order.orderNumber, customer?.fullName);
+    const savedArtworkPaths: string[] = [];
+    try {
+      for (const [index, item] of order.items.entries()) {
+        const file = formData.get(`artwork-${index}`);
+        if (!(file instanceof File) || file.size === 0) continue;
+        const relative = await saveArtworkFile(file, order.orderNumber, "original", order.createdAt.getFullYear(), order.createdAt.getMonth() + 1);
+        savedArtworkPaths.push(relative);
+        await prisma.orderItem.update({ where: { id: item.id }, data: { customerArtworkPath: relative } });
+        await prisma.orderFile.create({ data: { orderId: order.id, originalFilename: file.name, storagePath: relative, mimeType: file.type, sizeBytes: file.size } });
+      }
+    } catch (error) {
+      await Promise.all(savedArtworkPaths.map((relative) => rm(path.resolve(process.cwd(), relative), { force: true })));
+      await prisma.order.delete({ where: { id: order.id } }).catch(() => undefined);
+      console.error("New order artwork upload failed", error);
+      return { message: "The order was not saved because an artwork file could not be stored. Please try again." };
+    }
     revalidatePath("/orders");
     redirect(`/orders/${order.id}?success=true`);
   } catch (error) {
@@ -251,6 +267,15 @@ export async function transitionOrderAction(formData: FormData) {
     throw error;
   }
   revalidatePath("/orders");
+  revalidatePath(`/orders/${id}`);
+}
+
+export async function updateOrderPriorityAction(formData: FormData) {
+  const id = orderIdSchema.parse(formData.get("id"));
+  const priority = String(formData.get("priority") ?? "Normal");
+  if (priority !== "Normal" && priority !== "Urgent") throw new Error("INVALID_PRIORITY");
+  await prisma.order.update({ where: { id }, data: { priority } });
+  revalidatePath("/production");
   revalidatePath(`/orders/${id}`);
 }
 export async function addPaymentAction(
@@ -476,16 +501,15 @@ export async function duplicateOrderAction(formData: FormData) {
     });
     if (!order) throw new Error("Order not found");
 
-    const year = new Date().getFullYear();
     const sequence = await prisma.sequence.upsert({
-      where: { key: `order-${year}` },
+      where: { key: "order-global" },
       update: { value: { increment: 1 } },
-      create: { key: `order-${year}`, value: 1 },
+      create: { key: "order-global", value: 1 },
     });
 
     const duplicated = await prisma.order.create({
       data: {
-        orderNumber: `SUB-${year}-${sequence.value.toString().padStart(6, "0")}`,
+        orderNumber: `PX${sequence.value.toString().padStart(5, "0")}`,
         customerId: order.customerId,
         dueDate: null,
         deliveryMethod: order.deliveryMethod,
@@ -523,7 +547,7 @@ export async function duplicateOrderAction(formData: FormData) {
   }
 }
 export async function permanentlyDeleteTestOrderAction(formData: FormData) {
-  const id = orderIdSchema.parse(formData.get("orderId")); const confirmation = String(formData.get("confirmation") ?? "");
+  const id = orderIdSchema.parse(formData.get("orderId")); const confirmation = String(formData.get("deleteOrderConfirmation") ?? "");
   await requireAdmin();
   await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({ where: { id }, include: { payments: { select: { id: true } }, stockMovements: { select: { id: true } }, items: { include: { stockMovements: { select: { id: true } } } } } });

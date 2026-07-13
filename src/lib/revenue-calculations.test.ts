@@ -1,10 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { Decimal } from "@prisma/client/runtime/library";
-import { calculateRevenueStats, OrderWithRelations, PaymentWithRelations } from "./revenue-calculations";
+import { calculateRevenueStats, isRecognizedOrder, OrderWithRelations, PaymentWithRelations } from "./revenue-calculations";
 
 const d = (val: number) => new Decimal(val);
 
 describe("calculateRevenueStats", () => {
+  it("recognizes a Draft order only when it has received a payment", () => {
+    expect(isRecognizedOrder({ id: "draft", status: "Draft" }, { draft: 10 })).toBe(true);
+    expect(isRecognizedOrder({ id: "draft", status: "Draft" }, { draft: 0 })).toBe(false);
+    expect(isRecognizedOrder({ id: "cancelled", status: "Cancelled" }, { cancelled: 100 })).toBe(false);
+  });
   it("excludes cancelled and draft orders from revenue, profit, and counts", () => {
     const orders: OrderWithRelations[] = [
       {

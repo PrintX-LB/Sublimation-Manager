@@ -484,7 +484,7 @@ export function OrderForm({
                                 ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
                                 : "bg-slate-800 text-slate-500 border-slate-700"
                             }`}>
-                              {item.localArtworkUrl ? "Pending Order Save" : "Pending Upload"}
+                              {item.localArtworkUrl ? "Will be saved with order" : "Pending Upload"}
                             </span>
 
                             {/* File Upload Selector */}
@@ -493,6 +493,7 @@ export function OrderForm({
                               Browse
                               <input
                                 type="file"
+                                name={`artwork-${index}`}
                                 accept="image/*"
                                 className="hidden"
                                 onChange={(e) => handleArtworkUpload(index, e.target.files?.[0] ?? null)}
@@ -560,71 +561,63 @@ export function OrderForm({
               3. Order Summary
             </h2>
 
-            {/* Calculations Log */}
-            <div className="space-y-2 text-xs text-slate-400">
-              <div className="flex justify-between">
-                <span>Products Subtotal</span>
-                <span className="font-semibold text-slate-200">{formatUSD(productsSubtotal)}</span>
-              </div>
-              <div className="flex justify-between items-center gap-2">
-                <span>Delivery Charge</span>
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-300">Grand Total</p>
+              <p className="mt-1 text-3xl font-bold tracking-tight text-slate-50 text-right">{formatUSD(grandTotal)}</p>
+            </div>
+
+            <div className="border-t border-slate-800 pt-4">
+              <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Payment</h3>
+              <div className="flex items-center justify-between gap-3 text-xs text-slate-400">
+                <span>Deposit</span>
                 <input
-                  name="deliveryCharge"
-                  value={deliveryCharge}
-                  onChange={(e) => setDeliveryCharge(e.target.value)}
-                  className="w-20 rounded border border-slate-800 bg-[#0f172a] px-2 py-0.5 text-right font-semibold text-slate-200"
+                  value={amountPaid}
+                  onChange={(e) => setAmountPaid(e.target.value)}
+                  className="h-10 w-28 rounded-lg border border-slate-800 bg-[#0f172a] px-3 text-right text-base font-semibold text-slate-200"
                 />
               </div>
-              <div className="flex justify-between items-center gap-2">
-                <span>Discount</span>
+              <div className="mt-3 flex items-center justify-between border-t border-slate-800 pt-3 text-sm font-semibold">
+                <span className="text-slate-300">Remaining Balance</span>
+                <span className={remainingBalance > 0 ? "text-red-400 text-lg font-bold" : "text-emerald-400 text-lg font-bold"}>
+                  {formatUSD(remainingBalance)}
+                </span>
+              </div>
+            </div>
+
+            <div className="border-t border-slate-800 pt-4">
+              <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Pricing Breakdown</h3>
+              <div className="space-y-3 text-xs text-slate-400">
+                <div className="flex items-center justify-between"><span>Products Subtotal</span><span className="text-right font-semibold text-slate-200">{formatUSD(productsSubtotal)}</span></div>
+                <div className="flex items-center justify-between gap-3"><span>Delivery</span>
+                  <input name="deliveryCharge" value={deliveryCharge} onChange={(e) => setDeliveryCharge(e.target.value)} className="h-9 w-28 rounded-lg border border-slate-800 bg-[#0f172a] px-3 text-right font-semibold text-slate-200" />
+                </div>
+                <div className="flex items-center justify-between gap-3"><span>Discount</span>
                 <div className="flex rounded border border-slate-800 bg-[#0f172a] overflow-hidden">
                   <input
                     name="discountValue"
                     value={discountValue}
                     onChange={(e) => setDiscountValue(e.target.value)}
-                    className="w-16 bg-transparent px-1.5 py-0.5 text-right text-slate-200 focus:outline-none"
+                    className="h-9 w-20 bg-transparent px-2 text-right text-slate-200 focus:outline-none"
                   />
                   <select
                     name="discountType"
                     value={discountType}
                     onChange={(e) => setDiscountType(e.target.value as "fixed" | "percentage")}
-                    className="bg-[#111827] text-[10px] text-slate-400 px-1 border-l border-slate-800 focus:outline-none"
+                    className="h-9 bg-[#111827] px-2 text-[10px] text-slate-400 border-l border-slate-800 focus:outline-none"
                   >
                     <option value="fixed">$</option>
                     <option value="percentage">%</option>
                   </select>
                 </div>
               </div>
-
-              <div className="border-t border-slate-800/80 my-2 pt-2 flex justify-between text-sm font-bold text-slate-200">
-                <span>Grand Total</span>
-                <span>{formatUSD(grandTotal)}</span>
+                <div className="flex items-center justify-between"><span>Estimated Cost</span><span className="text-right font-semibold text-slate-300">{formatUSD(estimatedCostTotal)}</span></div>
               </div>
+            </div>
 
-              <div className="flex justify-between items-center gap-2">
-                <span>Amount Paid (Deposit)</span>
-                <input
-                  value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
-                  className="w-20 rounded border border-slate-800 bg-[#0f172a] px-2 py-0.5 text-right font-semibold text-slate-200"
-                />
-              </div>
-
-              <div className="flex justify-between text-xs text-slate-500 font-semibold">
-                <span>Remaining Balance</span>
-                <span className={remainingBalance > 0 ? "text-red-400 font-bold" : ""}>
-                  {formatUSD(remainingBalance)}
-                </span>
-              </div>
-
-              <div className="border-t border-dashed border-slate-800 my-2 pt-2 flex justify-between text-[11px] font-semibold text-slate-500">
-                <span>Estimated Cost</span>
-                <span>{formatUSD(estimatedCostTotal)}</span>
-              </div>
-
-              <div className="flex justify-between text-xs font-semibold text-emerald-400">
-                <span>Est. Net Profit</span>
-                <span>{formatUSD(estimatedProfit)}</span>
+            <div className="border-t border-slate-800 pt-4">
+              <div className="flex items-center justify-between text-sm font-semibold text-emerald-400">
+                <span>Estimated Net Profit</span>
+                <span className="text-right text-lg">{formatUSD(estimatedProfit)}</span>
               </div>
             </div>
 
@@ -635,8 +628,9 @@ export function OrderForm({
               </p>
             )}
 
-            {/* Submissions buttons */}
-            <div className="space-y-2 pt-2">
+            <div className="border-t border-slate-800 pt-4">
+              <h3 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Actions</h3>
+              <div className="space-y-2">
               <button
                 disabled={pending || !variants.length}
                 className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-700 text-slate-50 font-bold py-3 text-xs tracking-wider uppercase transition shadow-md disabled:opacity-40 select-none"
@@ -655,6 +649,7 @@ export function OrderForm({
               >
                 Cancel
               </Link>
+              </div>
             </div>
           </section>
         </div>

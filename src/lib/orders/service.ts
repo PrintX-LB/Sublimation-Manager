@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { decimalToCents } from "@/lib/money";
 import { calculateTotals } from "./totals";
 import type { OrderInput } from "@/lib/validation/order";
-import { COMMIT_STATUS, isOrderStatus } from "./status";
+import { COMMIT_STATUS, isOrderStatus, normalizeOrderStatus } from "./status";
 
 function decimal(value: string | Prisma.Decimal) {
   return new Prisma.Decimal(value.toString());
@@ -171,15 +171,14 @@ export async function createOrder(input: OrderInput) {
       input.discountValue,
       input.deliveryCharge,
     );
-    const year = new Date().getFullYear();
     const sequence = await tx.sequence.upsert({
-      where: { key: `order-${year}` },
+      where: { key: "order-global" },
       update: { value: { increment: 1 } },
-      create: { key: `order-${year}`, value: 1 },
+      create: { key: "order-global", value: 1 },
     });
     return tx.order.create({
       data: {
-        orderNumber: `SUB-${year}-${sequence.value.toString().padStart(6, "0")}`,
+        orderNumber: `PX${sequence.value.toString().padStart(5, "0")}`,
         customerId: customer.id,
         dueDate: input.dueDate
           ? new Date(`${input.dueDate}T00:00:00.000Z`)
@@ -251,13 +250,23 @@ export async function updateDraftOrder(id: string, input: OrderInput) {
 
 export async function transitionOrder(id: string, target: string) {
   if (!isOrderStatus(target)) throw new Error("INVALID_STATUS");
+  const normalizedTarget = normalizeOrderStatus(target);
+  if (!normalizedTarget) throw new Error("INVALID_STATUS");
   return prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id },
       include: { items: true },
     });
     if (!order) throw new Error("ORDER_NOT_FOUND");
-    if (target === COMMIT_STATUS && !order.stockCommitted) {
+    const finalStatus = ["Completed", "Cancelled"].includes(normalizedTarget);
+    const finalStatusAt = finalStatus ? (order.status === normalizedTarget && order.finalStatusAt ? order.finalStatusAt : new Date()) : null;
+    const completionFields = {
+      finalStatusAt,
+      completedAt: normalizedTarget === "Completed" ? new Date() : null,
+      deliveredAt: null,
+      cancelledAt: normalizedTarget === "Cancelled" ? new Date() : null,
+    };
+    if (normalizedTarget === COMMIT_STATUS && !order.stockCommitted) {
       // Claim the commit inside the same SQLite transaction. A concurrent approval
       // can then observe zero affected rows and cannot deduct stock twice.
       const claimed = await tx.order.updateMany({
@@ -274,19 +283,20 @@ export async function transitionOrder(id: string, target: string) {
       return tx.order.update({
         where: { id },
         data: {
-          status: target,
+          status: normalizedTarget,
           stockCommitted: true,
+          ...completionFields,
         },
       });
     }
-    if (target === "Cancelled" && order.stockCommitted) {
+    if (normalizedTarget === "Cancelled" && order.stockCommitted) {
       await restoreItems(tx, order, "Order cancelled");
       return tx.order.update({
         where: { id },
-        data: { status: target, stockCommitted: false, stockCommittedAt: null },
+        data: { status: normalizedTarget, stockCommitted: false, stockCommittedAt: null, ...completionFields },
       });
     }
-    return tx.order.update({ where: { id }, data: { status: target } });
+    return tx.order.update({ where: { id }, data: { status: normalizedTarget, ...completionFields } });
   });
 }
 
@@ -407,10 +417,19 @@ export function getOrder(id: string) {
     where: { id },
     include: {
       customer: true,
-      items: { include: { productVariant: true } },
+      items: {
+        include: {
+          productVariant: true,
+          stockMovements: true,
+          artworkProject: {
+            include: { versions: { orderBy: { version: "desc" } } },
+          },
+        },
+      },
       payments: { orderBy: { createdAt: "asc" } },
       files: { orderBy: { createdAt: "desc" } },
       stockMovements: { orderBy: { createdAt: "asc" } },
+      printSheets: { include: { sheet: true } },
     },
   });
 }

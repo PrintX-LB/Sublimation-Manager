@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db/prisma";
 import { PageHeading } from "@/components/admin/page-heading";
 import { RevenueDashboard } from "@/components/revenue/revenue-dashboard";
-import { calculateRevenueStats, OrderWithRelations, PaymentWithRelations } from "@/lib/revenue-calculations";
+import { calculateRevenueStats, isRecognizedOrder, OrderWithRelations, PaymentWithRelations } from "@/lib/revenue-calculations";
 
 export default async function RevenuePage({
   searchParams,
@@ -99,9 +99,16 @@ export default async function RevenuePage({
         notIn: ["Draft", "draft", "Cancelled", "cancelled"],
       },
     },
-    select: { total: true },
+    select: { id: true, status: true, total: true, createdAt: true, payments: { select: { amount: true } } },
   });
-  const revenueThisYear = yearOrders.reduce((sum, o) => sum + Number(o.total), 0);
+  const recognisedValue = (rows: typeof yearOrders) => rows.reduce((sum, o) => {
+    const paid = o.payments.reduce((paidTotal, payment) => paidTotal + Number(payment.amount), 0);
+    return isRecognizedOrder({ id: o.id, status: o.status }, { [o.id]: paid }) ? sum + Number(o.total) : sum;
+  }, 0);
+  const todayKey = new Date().toDateString();
+  const revenueToday = recognisedValue(yearOrders.filter((o) => o.createdAt.toDateString() === todayKey));
+  const revenueThisMonth = recognisedValue(yearOrders.filter((o) => o.createdAt.getMonth() === now.getMonth()));
+  const revenueThisYear = recognisedValue(yearOrders);
 
   // 4. Load all historical payments for orders in the selected period to compute exact outstanding balances
   const periodOrderIds = orders.map((o) => o.id);
@@ -130,8 +137,7 @@ export default async function RevenuePage({
   // 5. Aggregate Top Products
   const productSummary: Record<string, { unitsSold: number; revenue: number; cost: number }> = {};
   orders.forEach((o) => {
-    const statusLower = o.status.toLowerCase();
-    if (statusLower === "cancelled" || statusLower === "draft") return;
+    if (!isRecognizedOrder(o, allPaymentsForPeriodOrders)) return;
 
     o.items.forEach((item) => {
       const name = item.productNameSnapshot;
@@ -158,8 +164,7 @@ export default async function RevenuePage({
   // 6. Aggregate Top Customers
   const customerSummary: Record<string, { count: number; revenue: number; paid: number }> = {};
   orders.forEach((o) => {
-    const statusLower = o.status.toLowerCase();
-    if (statusLower === "cancelled" || statusLower === "draft") return;
+    if (!isRecognizedOrder(o, allPaymentsForPeriodOrders)) return;
 
     const name = o.customer.fullName;
     if (!customerSummary[name]) {
@@ -206,8 +211,7 @@ export default async function RevenuePage({
     }
 
     orders.forEach((o) => {
-      const statusLower = o.status.toLowerCase();
-      if (statusLower === "cancelled" || statusLower === "draft") return;
+      if (!isRecognizedOrder(o, allPaymentsForPeriodOrders)) return;
 
       const m = o.createdAt.getMonth();
       const monthLabel = new Date(selectedYear, m).toLocaleString("en-GB", { month: "short" });
@@ -237,8 +241,7 @@ export default async function RevenuePage({
     }
 
     orders.forEach((o) => {
-      const statusLower = o.status.toLowerCase();
-      if (statusLower === "cancelled" || statusLower === "draft") return;
+      if (!isRecognizedOrder(o, allPaymentsForPeriodOrders)) return;
 
       const dayLabel = `${o.createdAt.getDate()}`;
       if (chartDataMap[dayLabel]) {
@@ -309,6 +312,8 @@ export default async function RevenuePage({
         stats={{
           ...baseStats,
           revenueThisYear,
+          revenueToday,
+          revenueThisMonth,
         }}
         filters={{
           year: selectedYear,

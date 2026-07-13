@@ -14,7 +14,6 @@ import {
   Image as ImageIcon,
   CheckCircle,
   Activity,
-  History,
   Coins,
   ChevronRight
 } from "lucide-react";
@@ -42,12 +41,12 @@ export default async function DashboardPage() {
 
   // KPI Calculations
   const activeOrders = allOrders.filter(
-    (o) => !["Cancelled", "Delivered", "Completed"].includes(o.status)
+    (o) => !["Cancelled", "Completed"].includes(o.status)
   );
   
   const openOrdersCount = activeOrders.length;
   const readyToPrintCount = allOrders.filter((o) => o.status === "Ready to print").length;
-  const awaitingFilesCount = allOrders.filter((o) => o.status === "Awaiting customer files").length;
+  const awaitingFilesCount = allOrders.filter((o) => o.status === "Draft").length;
 
   // Fetch low stock items
   const variants = await prisma.productVariant.findMany({
@@ -189,6 +188,7 @@ export default async function DashboardPage() {
     });
   });
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const sortedActivities = activities
     .sort((a, b) => b.time.getTime() - a.time.getTime())
     .slice(0, 6);
@@ -208,9 +208,9 @@ export default async function DashboardPage() {
     switch (status) {
       case "Ready to print":
         return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-      case "Awaiting customer files":
+      case "Draft":
         return "bg-amber-500/10 text-amber-400 border-amber-500/20";
-      case "Awaiting customer approval":
+      case "Ready to print":
         return "bg-purple-500/10 text-purple-400 border-purple-500/20";
       case "In production":
         return "bg-blue-500/10 text-blue-400 border-blue-500/20";
@@ -536,8 +536,9 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      {/* Fourth Row: Outstanding Payments (LEFT) & Recent Activity (RIGHT) */}
-      <section className="grid gap-6 md:grid-cols-2">
+      {/* Fourth Row: Outstanding Payments Ledger */}
+      {/* TODO: The Live Activity Log widget will return in a future version as the Production Feed after the Activity/Audit system is implemented. */}
+      <section className="grid gap-6 grid-cols-1">
         {/* Outstanding Payments Ledger */}
         <div className="rounded-2xl border border-slate-800 bg-[#1e293b] shadow-sm flex flex-col overflow-hidden">
           <div className="border-b border-slate-800 px-6 py-4 flex items-center justify-between bg-slate-900/30">
@@ -581,43 +582,6 @@ export default async function DashboardPage() {
                   ))}
                 </tbody>
               </table>
-            )}
-          </div>
-        </div>
-
-        {/* Live Activity Log */}
-        <div className="rounded-2xl border border-slate-800 bg-[#1e293b] shadow-sm flex flex-col overflow-hidden">
-          <div className="border-b border-slate-800 px-6 py-4 flex items-center justify-between bg-slate-900/30">
-            <h2 className="font-semibold text-sm tracking-wide text-slate-200 flex items-center gap-2">
-              <History size={16} className="text-emerald-400" />
-              Live Workspace Stream
-            </h2>
-          </div>
-          <div className="p-5 overflow-y-auto max-h-[300px] space-y-4">
-            {sortedActivities.length === 0 ? (
-              <div className="text-center text-slate-400 italic py-12 text-xs">No recent activity.</div>
-            ) : (
-              sortedActivities.map((act) => {
-                let badgeColor = "bg-slate-800 text-slate-400";
-                if (act.type === "order") badgeColor = "bg-blue-500/10 text-blue-400 border border-blue-500/20";
-                if (act.type === "payment") badgeColor = "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
-                if (act.type === "stock") badgeColor = "bg-amber-500/10 text-amber-400 border border-amber-500/20";
-                if (act.type === "customer") badgeColor = "bg-purple-500/10 text-purple-400 border border-purple-500/20";
-
-                return (
-                  <div key={act.id} className="flex items-start gap-3 text-xs">
-                    <span className={`inline-flex px-2 py-0.5 rounded text-[9px] font-bold uppercase ${badgeColor} shrink-0 mt-0.5`}>
-                      {act.type}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-slate-200 leading-snug">{act.description}</p>
-                    </div>
-                    <span className="text-[10px] text-slate-500 shrink-0 font-medium select-none">
-                      {formatActivityTime(act.time)}
-                    </span>
-                  </div>
-                );
-              })
             )}
           </div>
         </div>

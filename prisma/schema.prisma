@@ -123,6 +123,7 @@ model Order {
   customerNotes String?
   internalNotes String?
   isTestOrder Boolean @default(false)
+  priority String @default("Normal")
   stockCommitted Boolean  @default(false)
   stockCommittedAt DateTime?
   customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
@@ -133,9 +134,13 @@ model Order {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
   completedAt DateTime?
+  deliveredAt DateTime?
+  cancelledAt DateTime?
+  finalStatusAt DateTime?
   filesDeletedAt DateTime?
   retainFilesPermanently Boolean @default(false)
   retentionExtendedUntil DateTime?
+  printSheets PrintSheetSlot[]
 
   @@index([customerId])
   @@index([status, dueDate])
@@ -206,8 +211,35 @@ model ArtworkVersion {
   heightPx    Int
   project     ArtworkProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt   DateTime       @default(now())
+  printSheetSlots PrintSheetSlot[]
   @@unique([projectId, version])
   @@index([projectId, createdAt])
+}
+
+model PrintSheet {
+  id          String   @id @default(uuid())
+  filename    String
+  storagePath String
+  widthPx     Int
+  heightPx    Int
+  dpi         Int
+  createdAt   DateTime @default(now())
+  slots       PrintSheetSlot[]
+  @@index([createdAt])
+}
+
+model PrintSheetSlot {
+  id              String         @id @default(uuid())
+  sheetId         String
+  slotNumber      Int
+  artworkVersionId String
+  orderId         String
+  sheet           PrintSheet     @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  artworkVersion  ArtworkVersion @relation(fields: [artworkVersionId], references: [id], onDelete: Restrict)
+  order           Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  @@unique([sheetId, slotNumber])
+  @@index([artworkVersionId])
+  @@index([orderId])
 }
 
 model Payment {
