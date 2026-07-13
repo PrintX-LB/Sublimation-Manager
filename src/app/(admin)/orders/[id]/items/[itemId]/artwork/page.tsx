@@ -165,6 +165,7 @@ export default async function ArtworkPage({
             src={artworkDataUrl}
             width={width}
             height={height}
+            dpi={template?.dpi ?? 300}
             safeArea={safeArea}
             bleed={bleed}
             savedState={savedState}

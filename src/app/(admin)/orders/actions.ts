@@ -514,20 +514,27 @@ export async function duplicateOrderAction(formData: FormData) {
 export async function permanentlyDeleteTestOrderAction(formData: FormData) {
   const id = orderIdSchema.parse(formData.get("orderId")); const confirmation = String(formData.get("confirmation") ?? "");
   await requireAdmin();
-  const order = await prisma.order.findUnique({ where: { id }, include: { payments: true, items: { include: { stockMovements: true } } } });
-  if (!order) throw new Error("ORDER_NOT_FOUND");
-  const blocked = !order.isTestOrder || order.payments.length > 0 || order.stockCommitted || order.items.some((item) => item.stockMovements.length > 0) || confirmation !== order.orderNumber;
-  await prisma.adminAuditLog.create({ data: { action: "permanent_test_order_delete", orderNumber: order.orderNumber, success: !blocked, reason: blocked ? "Eligibility or confirmation check failed" : undefined } });
-  if (blocked) throw new Error("TEST_ORDER_DELETE_BLOCKED");
-  await prisma.$transaction(async (tx) => { await tx.stockMovement.deleteMany({ where: { orderId: id } }); await tx.orderFile.deleteMany({ where: { orderId: id } }); await tx.orderItem.deleteMany({ where: { orderId: id } }); await tx.order.delete({ where: { id } }); });
+  await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({ where: { id }, include: { payments: { select: { id: true } }, stockMovements: { select: { id: true } }, items: { include: { stockMovements: { select: { id: true } } } } } });
+    if (!order) throw new Error("ORDER_NOT_FOUND");
+    const blocked = !order.isTestOrder || order.status !== "Draft" || order.payments.length > 0 || order.stockCommitted || order.stockMovements.length > 0 || order.items.some((item) => item.stockMovements.length > 0) || confirmation !== order.orderNumber;
+    await tx.adminAuditLog.create({ data: { action: "permanent_test_order_delete", orderNumber: order.orderNumber, success: !blocked, reason: blocked ? "Eligibility or confirmation check failed" : undefined } });
+    if (blocked) throw new Error("TEST_ORDER_DELETE_BLOCKED");
+    await tx.orderFile.deleteMany({ where: { orderId: id } });
+    await tx.orderItem.deleteMany({ where: { orderId: id } });
+    await tx.order.delete({ where: { id } });
+  });
   revalidatePath("/orders"); redirect("/orders");
 }
 export async function convertCancelledTestOrderToDraftAction(formData: FormData) {
   const id = orderIdSchema.parse(formData.get("orderId")); await requireAdmin();
-  const order = await prisma.order.findUnique({ where: { id }, include: { payments: true, items: { include: { stockMovements: true } } } });
-  if (!order) throw new Error("ORDER_NOT_FOUND");
-  const blocked = !order.isTestOrder || order.status !== "Cancelled" || order.payments.length > 0 || order.stockCommitted || order.items.some((item) => item.stockMovements.length > 0);
-  await prisma.adminAuditLog.create({ data: { action: "convert_cancelled_test_order_to_draft", orderNumber: order.orderNumber, success: !blocked, reason: blocked ? "Conversion eligibility failed" : undefined } });
-  if (blocked) throw new Error("TEST_ORDER_CONVERSION_BLOCKED");
-  await prisma.order.update({ where: { id }, data: { status: "Draft" } }); revalidatePath(`/orders/${id}`);
+  await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({ where: { id }, include: { payments: { select: { id: true } }, stockMovements: { select: { id: true } }, items: { include: { stockMovements: { select: { id: true } } } } } });
+    if (!order) throw new Error("ORDER_NOT_FOUND");
+    const blocked = !order.isTestOrder || order.status !== "Cancelled" || order.payments.length > 0 || order.stockCommitted || order.stockMovements.length > 0 || order.items.some((item) => item.stockMovements.length > 0);
+    await tx.adminAuditLog.create({ data: { action: "convert_cancelled_test_order_to_draft", orderNumber: order.orderNumber, success: !blocked, reason: blocked ? "Conversion eligibility failed" : undefined } });
+    if (blocked) throw new Error("TEST_ORDER_CONVERSION_BLOCKED");
+    await tx.order.update({ where: { id }, data: { status: "Draft" } });
+  });
+  revalidatePath(`/orders/${id}`);
 }

@@ -21,6 +21,7 @@ interface ArtworkEditorShellProps {
   width: number;
   /** Canvas height in pixels (computed from the print template on the server). */
   height: number;
+  dpi?: number;
   /** Optional safe-area margin in pixels. */
   safeArea?: number;
   /** Optional bleed margin in pixels. */
@@ -34,6 +35,7 @@ export function ArtworkEditorShell({
   src,
   width,
   height,
+  dpi,
   safeArea,
   bleed,
   savedState,
@@ -116,6 +118,7 @@ export function ArtworkEditorShell({
         src={src}
         width={width}
         height={height}
+        dpi={dpi}
         safeArea={safeArea}
         bleed={bleed}
         savedState={savedState}

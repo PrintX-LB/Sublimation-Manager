@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 test("opens the administration dashboard without a login", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Command Center" })).toBeVisible();
   await expect(page.getByText("Local workspace")).toBeVisible();
 });
 
@@ -15,9 +15,7 @@ test("provides accessible administration navigation", async ({ page }) => {
   await expect(
     navigation.getByRole("link", { name: "Customers" }),
   ).toBeVisible();
-  await expect(
-    navigation.getByRole("link", { name: "Products" }),
-  ).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Inventory" })).toBeVisible();
   await expect(navigation.getByRole("link", { name: "Orders" })).toBeVisible();
 });
 
@@ -64,7 +62,7 @@ test("creates and edits a product with a variant", async ({
   await expect(
     page.getByRole("heading", { name: `Phase Two Mug ${suffix}` }),
   ).toBeVisible();
-  await expect(page.getByText("€10.00 · 66.6%")).toBeVisible();
+  await expect(page.getByText("$10.00 · 66.6%")).toBeVisible();
 
   await page.getByRole("link", { name: "Edit" }).click();
   await page.getByLabel("Product name").fill(`Phase Two Mug ${suffix} Edited`);
@@ -73,5 +71,5 @@ test("creates and edits a product with a variant", async ({
   await expect(
     page.getByRole("heading", { name: `Phase Two Mug ${suffix} Edited` }),
   ).toBeVisible();
-  await expect(page.getByText("€11.00 · 68.7%")).toBeVisible();
+  await expect(page.getByText("$11.00 · 68.7%")).toBeVisible();
 });
