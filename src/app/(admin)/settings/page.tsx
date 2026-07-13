@@ -1,18 +1,11 @@
-import { Settings } from "lucide-react";
 import { PageHeading } from "@/components/admin/page-heading";
-import { Placeholder } from "@/components/admin/placeholder";
-export default function Page() {
-  return (
-    <>
-      <PageHeading
-        title="Settings"
-        description="Configure your company workspace and team preferences."
-      />
-      <Placeholder
-        icon={Settings}
-        title="Workspace settings"
-        description="Company and team configuration will arrive in a later phase."
-      />
-    </>
-  );
+import { getAdminSession } from "@/lib/admin-session";
+import { getOrderStorageSettings } from "@/lib/order-storage";
+import { adminLoginAction, adminLogoutAction, resetDevelopmentDataAction, saveStorageSettingsAction, testStorageFolderAction, runStorageCleanupAction } from "./actions";
+
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ admin?: string; reset?: string }> }) {
+  const unlocked = await getAdminSession();
+  const params = await searchParams;
+  const storage = await getOrderStorageSettings();
+  return <><PageHeading title="Settings" description="Local PrintX workspace settings."/><section className="mt-8 max-w-2xl rounded-xl border bg-white p-6"><h2 className="font-semibold">Admin Mode</h2>{unlocked ? <><p className="mt-2 text-sm text-emerald-700">Admin Mode unlocked · expires after 30 minutes of inactivity.</p><form action={adminLogoutAction} className="mt-4"><button className="rounded-lg border px-4 py-2 text-sm font-semibold">Lock Admin Mode</button></form>{process.env.NODE_ENV === "development" ? <div className="mt-8 border-t pt-5"><h3 className="font-semibold text-red-700">Administration</h3><p className="mt-2 text-sm text-red-600">Development-only utility. Permanently deletes orders, payments, artwork and stock history.</p><form action={resetDevelopmentDataAction} className="mt-3 flex gap-2"><input name="confirmation" required placeholder="Type RESET" className="rounded border p-2 text-sm"/><button className="rounded bg-red-600 px-3 py-2 text-sm font-semibold text-white">Reset Development Data</button></form></div> : null}</> : <form action={adminLoginAction} className="mt-4 space-y-3"><label className="block text-sm font-medium">Username<input name="username" required className="mt-1 w-full rounded-lg border p-2"/></label><label className="block text-sm font-medium">Password<input name="password" type="password" required className="mt-1 w-full rounded-lg border p-2"/></label>{params.admin === "invalid" ? <p className="text-sm text-red-600">Invalid admin credentials.</p> : null}<button className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white">Unlock Admin Mode</button></form>}</section><section className="mt-6 max-w-2xl rounded-xl border bg-white p-6"><h2 className="font-semibold">Storage</h2><p className="mt-1 text-sm text-slate-500">Order files are stored locally and cleaned after the configured retention period.</p><form action={saveStorageSettingsAction} className="mt-4 space-y-3"><label className="block text-sm font-medium">Order Files Base Folder<input name="baseFolder" defaultValue={storage.baseFolder} className="mt-1 w-full rounded-lg border p-2"/><span className="text-xs text-slate-500">Enter an absolute Windows path, for example D:\PrintX Orders</span></label><label className="block text-sm font-medium">Delete order files after (days)<input name="retentionDays" type="number" min="1" defaultValue={storage.retentionDays} className="mt-1 w-40 rounded-lg border p-2"/></label><div className="flex flex-wrap gap-2"><button formAction={testStorageFolderAction} className="rounded-lg border px-3 py-2 text-sm font-semibold">Test Folder</button><button className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">Save Storage Settings</button><button formAction={runStorageCleanupAction} className="rounded-lg border px-3 py-2 text-sm font-semibold">Run Cleanup Now</button></div></form><p className="mt-4 text-xs text-slate-500">Last cleanup: {storage.lastCleanupAt ? new Date(storage.lastCleanupAt).toLocaleString() : "Not run"}</p></section></>;
 }

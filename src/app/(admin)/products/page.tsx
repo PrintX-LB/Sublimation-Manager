@@ -1,18 +1,22 @@
-import { Package } from "lucide-react";
-import { PageHeading } from "@/components/admin/page-heading";
-import { Placeholder } from "@/components/admin/placeholder";
-export default function Page() {
-  return (
-    <>
-      <PageHeading
-        title="Products"
-        description="Products, variants, pricing and print specifications."
-      />
-      <Placeholder
-        icon={Package}
-        title="Product catalogue"
-        description="Product CRUD is intentionally outside Phase 1."
-      />
-    </>
-  );
+import { redirect } from "next/navigation";
+
+export default async function ProductsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const queryParams = new URLSearchParams();
+  
+  // Copy all search params over
+  Object.entries(params).forEach(([key, val]) => {
+    if (typeof val === "string") {
+      queryParams.set(key, val);
+    }
+  });
+  
+  // Force products tab
+  queryParams.set("tab", "products");
+
+  redirect(`/inventory?${queryParams.toString()}`);
 }

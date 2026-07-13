@@ -1,18 +1,22 @@
-import { Boxes } from "lucide-react";
-import { PageHeading } from "@/components/admin/page-heading";
-import { Placeholder } from "@/components/admin/placeholder";
-export default function Page() {
-  return (
-    <>
-      <PageHeading
-        title="Stock"
-        description="Monitor materials, blanks and stock movement history."
-      />
-      <Placeholder
-        icon={Boxes}
-        title="Stock control"
-        description="Stock deductions and inventory workflows are intentionally outside Phase 1."
-      />
-    </>
-  );
+import { redirect } from "next/navigation";
+
+export default async function StockPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const queryParams = new URLSearchParams();
+
+  // Copy all search params over
+  Object.entries(params).forEach(([key, val]) => {
+    if (typeof val === "string") {
+      queryParams.set(key, val);
+    }
+  });
+
+  // Force stock tab
+  queryParams.set("tab", "stock");
+
+  redirect(`/inventory?${queryParams.toString()}`);
 }

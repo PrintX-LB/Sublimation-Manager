@@ -4,12 +4,92 @@
 
 @layer base {
   * {
-    @apply border-slate-200;
+    border-color: #334155;
   }
   body {
-    @apply bg-slate-50 font-sans text-ink antialiased;
+    background-color: #0f172a;
+    color: #f8fafc;
+    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    -webkit-font-smoothing: antialiased;
   }
   :focus-visible {
-    @apply outline-none ring-2 ring-brand-500 ring-offset-2;
+    outline: none;
+    outline-offset: 2px;
+    --tw-ring-offset-width: 2px;
+    --tw-ring-offset-color: #0f172a;
+    --tw-ring-color: #10b981;
+    box-shadow: 0 0 0 2px #0f172a, 0 0 0 4px #10b981;
+  }
+}
+
+@layer utilities {
+  /* Class overrides for dynamic dark theme conversion */
+  .bg-white {
+    background-color: #1e293b !important; /* Card bg */
+  }
+  .bg-slate-50 {
+    background-color: #111827 !important; /* Panel bg / table headers */
+  }
+  .bg-slate-100 {
+    background-color: #111827 !important;
+  }
+  .bg-slate-200 {
+    background-color: #0f172a !important; /* Main layout bg */
+  }
+
+  /* Text colors */
+  .text-ink {
+    color: #f8fafc !important;
+  }
+  .text-slate-900 {
+    color: #f8fafc !important;
+  }
+  .text-slate-800 {
+    color: #f1f5f9 !important;
+  }
+  .text-slate-700 {
+    color: #e2e8f0 !important;
+  }
+  .text-slate-600 {
+    color: #cbd5e1 !important;
+  }
+  .text-slate-500 {
+    color: #94a3b8 !important; /* Muted text */
+  }
+
+  /* Borders */
+  .border-slate-100 {
+    border-color: #334155 !important;
+  }
+  .border-slate-200 {
+    border-color: #334155 !important;
+  }
+  .border-slate-300 {
+    border-color: #475569 !important;
+  }
+
+  /* Forms & Input defaults override */
+  input, select, textarea {
+    background-color: #0f172a !important;
+    color: #f8fafc !important;
+    border-color: #334155 !important;
+  }
+  input::placeholder, textarea::placeholder {
+    color: #475569 !important;
+  }
+  input:focus, select:focus, textarea:focus {
+    border-color: #10b981 !important;
+    box-shadow: 0 0 0 1px #10b981 !important;
+  }
+
+  /* Hovers & Interactive states */
+  .hover\:bg-slate-50:hover {
+    background-color: #334155 !important;
+  }
+  .hover\:bg-slate-100:hover {
+    background-color: #334155 !important;
+  }
+  .hover\:bg-slate-50\/50:hover {
+    background-color: rgba(51, 65, 85, 0.5) !important;
   }
 }

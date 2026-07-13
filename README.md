@@ -1,13 +1,12 @@
-# PrintFlow — Phase 1
+# PrintX — local Phase 3
 
-Production-oriented foundation for a small sublimation-printing business administration application. Phase 1 provides authentication, a protected responsive admin shell, database structure, storage policies, seed data, and test infrastructure. Operational CRUD and artwork workflows are intentionally placeholders.
+A local-first administration application for a single-user sublimation-printing business. Phase 3 adds orders, payments, local order files, and transactional SQLite stock control to the customer/product foundation.
 
 ## Stack
 
 - Next.js App Router, React and strict TypeScript
 - Tailwind CSS
-- Supabase PostgreSQL, Auth and Storage
-- Zod validation
+- SQLite with Prisma ORM
 - Vitest, Testing Library and Playwright
 - ESLint and Prettier
 
@@ -15,59 +14,70 @@ Production-oriented foundation for a small sublimation-printing business adminis
 
 - Node.js 20 or newer
 - npm
-- A Supabase project, or the Supabase CLI and Docker for local development
 
-## Installation
+No external account, hosted database, API key, or environment variable is required.
 
-```bash
-npm install
-cp .env.example .env.local
-```
+## Setup
 
-On PowerShell, copy the environment file with:
+From the repository directory:
 
 ```powershell
-Copy-Item .env.example .env.local
-```
-
-Set both values in `.env.local` using the Project URL and publishable/anon key from Supabase **Project Settings → API**. Never put the service-role key in this application.
-
-```dotenv
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-```
-
-## Supabase setup
-
-### Hosted project
-
-1. Link the CLI: `npx supabase login`, then `npx supabase link --project-ref YOUR_PROJECT_REF`.
-2. Apply migrations: `npx supabase db push`.
-3. Seed sample business data: `npx supabase db execute --file supabase/seed.sql` (or paste the seed into the SQL editor).
-4. In **Authentication → Users**, create the first email/password user. The database trigger creates its active profile automatically.
-
-If users existed before the migration, create their `profiles` rows manually in the SQL editor. The private `order-files` storage bucket and its 20 MB/type restrictions are created by the migration.
-
-### Local Supabase
-
-```bash
-npx supabase start
-npx supabase db reset
-```
-
-`db reset` applies `supabase/migrations` and then `supabase/seed.sql`. Copy the local API URL and anon key printed by `supabase status` into `.env.local`.
-
-## Running
-
-```bash
+npm install
+npx prisma migrate dev
 npm run dev
 ```
 
-Open <http://localhost:3000>. Unauthenticated requests are redirected to `/login`; successful email/password authentication opens `/dashboard`.
+Open <http://localhost:3000>. The root route opens the administration dashboard directly.
+
+`npx prisma migrate dev` creates the local database at `data/sublimation.db`, applies all migrations, and generates the Prisma client. The database file is excluded from Git.
+
+## Local database
+
+The Prisma schema is in `prisma/schema.prisma`. It models:
+
+- customers
+- product categories
+- print templates
+- products and product variants
+- orders and order items
+- payments
+- stock movements
+
+Money uses Prisma `Decimal`; application code must not perform monetary calculations with JavaScript floating-point numbers.
+
+Useful commands:
+
+```powershell
+npx prisma migrate dev --name describe_your_change
+npx prisma generate
+npx prisma studio
+```
+
+The order/stock migration is `prisma/migrations/20260712133000_orders_transactional_stock`. It adds order numbers and snapshots, payment and file metadata, status/discount fields, and immutable stock movement before/after values.
+
+Create a migration whenever the Prisma schema changes. Do not edit an already-applied migration.
+
+## Local files
+
+Uploaded customer images, artwork, and template files belong under `uploads/`, not inside SQLite. The database stores only relative paths such as `uploads/customers/<generated-name>.png`.
+
+`src/lib/files/local-file-storage.ts` creates collision-resistant filenames and writes files under an allowed upload category. The contents of `uploads/` are excluded from Git. Back up both `data/sublimation.db` and `uploads/` together because database paths refer to those files.
+
+## Architecture
+
+- `src/app/(admin)` contains the administration routes and intentionally has no authentication guard.
+- `src/lib/db/prisma.ts` owns the singleton Prisma client used by future repositories and server-side business logic.
+- `src/lib/files` owns local file persistence. UI components should store only the returned relative path.
+- `src/lib/repositories` owns paginated database reads and domain persistence.
+- `src/lib/validation` validates all browser input on the server before repository calls.
+- Server actions coordinate validation, persistence, cache revalidation and user-facing errors. UI components do not access SQLite directly.
+
+Authentication is deliberately absent for the initial single-PC deployment. The admin route group and data-access boundary allow a future authentication guard to be added without rewriting domain code.
 
 ## Quality checks
 
-```bash
+```powershell
+npx prisma validate
 npm run typecheck
 npm run lint
 npm run format:check
@@ -77,18 +87,23 @@ npm run test:e2e
 npm run build
 ```
 
-Playwright tests the sign-in experience and unauthenticated route protection in desktop and mobile Chromium. With no environment configured, the test server uses a deliberately unreachable local Supabase URL; this is sufficient for unauthenticated checks and does not bypass authentication.
+## Customer and product management
 
-## Architecture and security
+- Customers support generated numbers, search, sorting, pagination, full contact/address details, editing, order-history placeholders and archival.
+- Products support categories, multiple variant SKUs, selling price, production cost, stock visibility, low-stock thresholds, stock consumption, print-template selection and archival.
+- Profit and margin calculations use integer cents rather than JavaScript floating-point arithmetic.
+- Archival keeps records available for future order references; there is no permanent-delete workflow.
 
-- `src/app/(auth)` contains public authentication UI and server actions.
-- `src/app/(admin)` is protected both by middleware and a server-layout user check.
-- `src/lib/supabase` separates browser, server and middleware Supabase clients.
-- `src/lib/validation` holds boundary schemas; future database access and business rules should remain outside UI components.
-- Money is stored as PostgreSQL `numeric(12,2)`. Future TypeScript code must transport monetary values as decimal strings or use a decimal library—never JavaScript floating-point arithmetic.
-- Every business table has RLS enabled. Policies grant access only to authenticated users with an active `profiles` row; `anon` receives no policies. The storage bucket is private and uses the same active-user gate.
-- The current schema represents one company workspace. Multi-company tenancy is not part of Phase 1.
+## Orders and stock
 
-## Phase 1 boundaries
+- Draft orders do not affect stock. Transitioning to `Approved` commits each item’s `stockPerUnit × quantity` inside one Prisma interactive transaction.
+- Approval is idempotent through `Order.stockCommitted`; cancellation restores exactly the committed quantity.
+- Approved quantity changes apply only the difference and create a movement row for the adjustment.
+- SQLite writes are serialized by the transaction; conditional `updateMany` updates prevent a negative stock result when approvals race.
+- Every order movement records the actual signed stock change, before/after values, reason, order and item references, and timestamp.
+- Payments are separate records and payment state is calculated from their decimal amounts versus the order total.
+- Local order files accept JPEG, PNG, WebP and PDF up to 20 MB and are stored under `uploads/`; only metadata and relative paths are persisted in SQLite.
 
-Not implemented yet: customer/product CRUD, order creation, inventory deductions, payments UI, file upload UI, artwork editing, reporting, invitations, password reset and role-management screens. The underlying schema is prepared for these future phases without exposing incomplete workflows.
+## Current limitations
+
+Phase 3 does not implement artwork editing, reporting, archived-record restoration, or authentication. SQLite is intended for one application process on one PC; a future multi-user or networked deployment will require a server database and authentication. Manual stock corrections currently expose a local single-user action and do not provide a separate administrator role/override UI.

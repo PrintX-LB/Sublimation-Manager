@@ -1,0 +1,269 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../data/sublimation.db"
+}
+
+model Customer {
+  id             String    @id @default(uuid())
+  customerNumber String    @unique
+  fullName       String
+  phone          String?
+  email          String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  postcode       String?
+  country        String?
+  deliveryNotes  String?
+  internalNotes  String?
+  imagePath      String?
+  isArchived     Boolean   @default(false)
+  archivedAt     DateTime?
+  orders         Order[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([fullName])
+  @@index([email])
+  @@index([phone])
+  @@index([isArchived])
+}
+
+model ProductCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  isArchived  Boolean   @default(false)
+  archivedAt  DateTime?
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model PrintTemplate {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  widthMm   Decimal
+  heightMm  Decimal
+  dpi       Int      @default(300)
+  safeAreaMm Decimal  @default(0)
+  bleedMm   Decimal  @default(0)
+  filePath  String?
+  notes     String?
+  products  Product[]
+  artworkProjects ArtworkProject[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Product {
+  id              String           @id @default(uuid())
+  categoryId      String?
+  printTemplateId String?
+  name            String
+  description     String?
+  isActive        Boolean          @default(true)
+  archivedAt      DateTime?
+  category        ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  printTemplate   PrintTemplate?   @relation(fields: [printTemplateId], references: [id], onDelete: SetNull)
+  variants        ProductVariant[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([categoryId])
+  @@index([printTemplateId])
+  @@index([name])
+  @@index([isActive])
+}
+
+model ProductVariant {
+  id             String          @id @default(uuid())
+  productId      String
+  sku            String          @unique
+  name           String
+  optionName     String?
+  optionValue    String?
+  sellingPrice   Decimal
+  productionCost Decimal         @default(0)
+  stockQuantity  Decimal         @default(0)
+  reorderLevel   Decimal         @default(0)
+  stockPerUnit   Decimal         @default(1)
+  isActive       Boolean         @default(true)
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems     OrderItem[]
+  stockMovements StockMovement[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([productId])
+}
+
+model Sequence {
+  key   String @id
+  value Int    @default(0)
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  orderNumber String      @unique
+  customerId  String
+  status      String      @default("draft")
+  dueDate     DateTime?
+  deliveryMethod String?
+  subtotal    Decimal     @default(0)
+  discountType String     @default("fixed")
+  discountValue Decimal   @default(0)
+  deliveryCharge Decimal  @default(0)
+  tax         Decimal     @default(0)
+  total       Decimal     @default(0)
+  customerNotes String?
+  internalNotes String?
+  isTestOrder Boolean @default(false)
+  stockCommitted Boolean  @default(false)
+  stockCommittedAt DateTime?
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items       OrderItem[]
+  payments    Payment[]
+  stockMovements StockMovement[]
+  files       OrderFile[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  completedAt DateTime?
+  filesDeletedAt DateTime?
+  retainFilesPermanently Boolean @default(false)
+  retentionExtendedUntil DateTime?
+
+  @@index([customerId])
+  @@index([status, dueDate])
+}
+
+model AdminAuditLog {
+  id          String   @id @default(uuid())
+  action      String
+  orderNumber String?
+  success     Boolean
+  reason      String?
+  createdAt   DateTime @default(now())
+  @@index([createdAt])
+  @@index([action, success])
+}
+
+model OrderItem {
+  id                   String          @id @default(uuid())
+  orderId              String
+  productVariantId     String?
+  description          String
+  productNameSnapshot  String
+  skuSnapshot          String
+  productionCostSnapshot Decimal
+  quantity             Int
+  unitPrice            Decimal
+  lineDiscountType     String      @default("fixed")
+  lineDiscountValue    Decimal     @default(0)
+  lineTotal            Decimal
+  customerArtworkPath  String?
+  printReadyArtworkPath String?
+  artworkProject       ArtworkProject?
+  order                Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productVariant       ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
+  stockMovements       StockMovement[]
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  @@index([orderId])
+  @@index([productVariantId])
+}
+
+model ArtworkProject {
+  id             String          @id @default(uuid())
+  orderItemId    String          @unique
+  originalPath   String
+  templateId     String?
+  positionX      Decimal         @default(0)
+  positionY      Decimal         @default(0)
+  zoom           Decimal         @default(1)
+  rotation       Decimal         @default(0)
+  settingsJson   String          @default("{}")
+  activeVersionId String?
+  orderItem      OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  template       PrintTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  versions       ArtworkVersion[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model ArtworkVersion {
+  id          String         @id @default(uuid())
+  projectId   String
+  version     Int
+  editedPath  String
+  printReadyPath String
+  widthPx     Int
+  heightPx    Int
+  project     ArtworkProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+  @@unique([projectId, version])
+  @@index([projectId, createdAt])
+}
+
+model Payment {
+  id        String   @id @default(uuid())
+  orderId   String
+  amount    Decimal
+  method    String
+  status    String   @default("completed")
+  reference String?
+  paidAt    DateTime?
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+}
+
+model StockMovement {
+  id               String         @id @default(uuid())
+  productVariantId String
+  orderItemId      String?
+  movementType     String
+  orderId          String?
+  quantityChange   Decimal
+  stockBefore      Decimal
+  stockAfter       Decimal
+  reason           String
+  note             String?
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
+  orderItem        OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  order            Order?         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  createdAt        DateTime       @default(now())
+
+  @@index([productVariantId])
+  @@index([orderItemId])
+  @@index([orderId])
+}
+
+model OrderFile {
+  id               String   @id @default(uuid())
+  orderId          String
+  originalFilename String
+  storagePath      String
+  mimeType         String
+  sizeBytes        Int
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  deletedAt        DateTime?
+
+  @@index([orderId])
+}
+
+model AppSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}

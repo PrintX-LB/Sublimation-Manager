@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "PrintFlow", template: "%s | PrintFlow" },
+  title: { default: "PrintX", template: "%s | PrintX" },
   description: "Administration for a sublimation printing business",
 };
 
