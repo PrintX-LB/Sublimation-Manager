@@ -19,8 +19,8 @@ test.describe("release-readiness production smoke", () => {
     await expect(page.getByText("Backup & Restore")).toBeVisible();
     await expect(page.getByRole("button", { name: /Create Backup Snapshot/i })).toBeVisible();
 
-    await page.goto("/inventory/items");
-    await expect(page.getByRole("heading", { name: "Inventory Items" })).toBeVisible();
+    await page.goto("/inventory?tab=materials");
+    await expect(page.getByRole("heading", { name: "Inventory" })).toBeVisible();
 
     await page.goto("/production");
     await expect(page.getByRole("link", { name: "Generated Print Sheets" })).toBeVisible();

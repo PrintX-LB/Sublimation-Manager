@@ -12,6 +12,7 @@ import {
   Archive,
   Boxes,
   History,
+  FlaskConical,
 } from "lucide-react";
 import { marginPercent, unitProfit, formatUSD } from "@/lib/money";
 import { listCategories, listProducts } from "@/lib/repositories/products";
@@ -20,6 +21,8 @@ import { ArchiveProductButton } from "@/components/products/archive-product-butt
 import { StockTableClient } from "@/components/stock/stock-table-client";
 import { CategoryForm } from "@/components/products/category-form";
 import { archiveCategoryAction, saveCategoryAction } from "@/app/(admin)/products/actions";
+import { addInventoryStockAction, adjustInventoryAction, createInventoryItemAction, recordInventoryWasteAction } from "./items/actions";
+import { INVENTORY_UNITS } from "@/lib/inventory/service";
 
 export default async function InventoryPage({
   searchParams,
@@ -34,14 +37,15 @@ export default async function InventoryPage({
   }>;
 }) {
   const params = await searchParams;
-  const tab = params.tab || "products";
+  const requestedTab = params.tab || "products";
+  const tab = requestedTab === "supplies" ? "materials" : requestedTab === "movements" ? "transactions" : requestedTab;
 
   const tabs = [
     { id: "products", label: "Products", icon: Package },
     { id: "stock", label: "Stock", icon: Boxes },
-    { id: "movements", label: "Stock Movements", icon: History },
+    { id: "materials", label: "Materials & Supplies", icon: FlaskConical },
+    { id: "transactions", label: "Transactions", icon: History },
     { id: "categories", label: "Categories", icon: FolderTree },
-    { id: "supplies", label: "Inventory V2", icon: Boxes },
   ];
 
   return (
@@ -59,7 +63,7 @@ export default async function InventoryPage({
           return (
             <Link
               key={t.id}
-              href={t.id === "supplies" ? "/inventory/items" : `/inventory?tab=${t.id}`}
+              href={`/inventory?tab=${t.id}`}
               className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
                 isActive
                   ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
@@ -83,8 +87,12 @@ export default async function InventoryPage({
           <StockTab />
         )}
 
-        {tab === "movements" && (
-          <MovementsTab />
+        {tab === "materials" && (
+          <MaterialsTab />
+        )}
+
+        {tab === "transactions" && (
+          <TransactionsTab />
         )}
 
         {tab === "categories" && (
@@ -478,7 +486,12 @@ async function StockTab() {
   );
 }
 
-async function MovementsTab() {
+async function TransactionsTab() {
+  const inventoryTransactions = await prisma.inventoryTransaction.findMany({
+    select: { id: true, createdAt: true, transactionType: true, quantityChange: true, quantityBefore: true, quantityAfter: true, unit: true, reason: true, inventoryItem: { select: { name: true, sku: true } }, order: { select: { orderNumber: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
   const movements = await prisma.stockMovement.findMany({
     where: {
       productVariant: {
@@ -519,7 +532,11 @@ async function MovementsTab() {
 
   return (
     <div className="space-y-4">
-      <h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Stock Movements History</h3>
+      <div><h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Inventory Transactions</h3><p className="mt-1 text-xs text-slate-500">Purchases, production consumption, waste, adjustments and corrections.</p></div>
+      <div className="rounded-xl border border-slate-800 bg-[#1e293b] shadow-sm overflow-x-auto">
+        <table className="w-full min-w-[850px] text-left text-xs"><thead className="bg-[#111827] text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="px-4 py-3">When</th><th className="px-4 py-3">Item</th><th className="px-4 py-3">Type</th><th className="px-4 py-3 text-right">Change</th><th className="px-4 py-3 text-right">Before → After</th><th className="px-4 py-3">Reason</th></tr></thead><tbody className="divide-y divide-slate-800">{inventoryTransactions.map((transaction) => <tr key={transaction.id} className="hover:bg-slate-800/20"><td className="px-4 py-3 text-slate-400">{transaction.createdAt.toLocaleString("en-GB")}</td><td className="px-4 py-3"><span className="font-semibold text-slate-200">{transaction.inventoryItem.name}</span><span className="ml-2 font-mono text-[10px] text-slate-500">{transaction.inventoryItem.sku ?? ""}</span></td><td className="px-4 py-3 text-slate-400">{transaction.transactionType.replaceAll("_", " ")}</td><td className={`px-4 py-3 text-right font-semibold ${transaction.quantityChange.greaterThan(0) ? "text-emerald-400" : "text-rose-400"}`}>{transaction.quantityChange.greaterThan(0) ? "+" : ""}{transaction.quantityChange.toString()} {transaction.unit}</td><td className="px-4 py-3 text-right font-mono text-slate-500">{transaction.quantityBefore.toString()} → {transaction.quantityAfter.toString()}</td><td className="px-4 py-3 text-slate-400">{transaction.reason}{transaction.order?.orderNumber ? ` · ${transaction.order.orderNumber}` : ""}</td></tr>)}{inventoryTransactions.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No inventory transactions recorded yet.</td></tr> : null}</tbody></table>
+      </div>
+      <h3 className="pt-3 text-sm font-semibold uppercase tracking-wider text-slate-400">Product Stock History</h3>
       <div className="rounded-xl border border-slate-800 bg-[#1e293b] shadow-sm overflow-x-auto">
         <table className="w-full min-w-[900px] text-left text-xs border-collapse">
           <thead className="bg-[#111827] font-bold uppercase text-slate-500 text-[10px] tracking-wider border-b border-slate-800">
@@ -588,6 +605,17 @@ async function MovementsTab() {
       </div>
     </div>
   );
+}
+
+async function MaterialsTab() {
+  const items = await prisma.inventoryItem.findMany({ where: { inventoryType: "PRODUCTION_SUPPLY" }, include: { transactions: { orderBy: { createdAt: "desc" }, take: 5 } }, orderBy: { name: "asc" } });
+  return <div className="space-y-4">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-semibold uppercase tracking-wider text-slate-400">Materials & Supplies</h3><p className="mt-1 text-xs text-slate-500">Paper, ink, tape, packaging, boxes and workshop consumables.</p></div><span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">{items.length} item{items.length === 1 ? "" : "s"}</span></div>
+    <section className="rounded-xl border border-slate-800 bg-[#1e293b] p-4"><h4 className="text-sm font-semibold text-slate-200">Add material or supply</h4><form action={createInventoryItemAction} className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"><input type="hidden" name="inventoryType" value="PRODUCTION_SUPPLY" />{([[
+      "name", "Name"], ["openingQuantity", "Opening quantity"], ["minimumQuantity", "Minimum stock"], ["unitCost", "Unit cost"], ["sku", "SKU"], ["brand", "Brand"], ["supplier", "Supplier"], ["storageLocation", "Storage location"],
+    ] as const).map(([name, placeholder]) => <input key={name} name={name} required={name === "name"} type={(["openingQuantity", "minimumQuantity", "unitCost"] as readonly string[]).includes(name) ? "number" : "text"} step="0.001" min="0" placeholder={placeholder} className="h-9 rounded border border-slate-700 bg-slate-950 px-3 text-sm" />)}<select name="baseUnit" defaultValue="SHEET" className="h-9 rounded border border-slate-700 bg-slate-950 px-3 text-sm">{INVENTORY_UNITS.map((unit) => <option key={unit}>{unit}</option>)}</select><input name="notes" placeholder="Notes" className="h-9 rounded border border-slate-700 bg-slate-950 px-3 text-sm lg:col-span-2" /><button className="h-9 rounded bg-brand-600 px-4 text-sm font-semibold">Create supply</button></form></section>
+    <div className="grid gap-3 lg:grid-cols-2">{items.map((item) => { const low = item.isActive && item.currentQuantity.lte(item.minimumQuantity); return <article key={item.id} className="rounded-xl border border-slate-800 bg-[#1e293b] p-4"><div className="flex items-start justify-between gap-3"><div><h4 className="font-semibold text-slate-100">{item.name}</h4><p className="text-xs text-slate-500">{item.sku ?? "No SKU"} · {item.supplier ?? "No supplier"}</p></div><span className={`rounded-full px-2 py-1 text-xs ${low ? "bg-amber-500/10 text-amber-300" : "bg-emerald-500/10 text-emerald-300"}`}>{low ? "Low stock" : "Healthy"}</span></div><div className="mt-3 grid grid-cols-3 gap-2 text-sm"><div><p className="text-xs text-slate-500">On hand</p><p>{item.currentQuantity.toString()} {item.baseUnit}</p></div><div><p className="text-xs text-slate-500">Minimum</p><p>{item.minimumQuantity.toString()}</p></div><div><p className="text-xs text-slate-500">Unit cost</p><p>{formatUSD(item.unitCost.toString())}</p></div></div><div className="mt-4 grid gap-2 border-t border-slate-800 pt-3 sm:grid-cols-3"><form action={addInventoryStockAction} className="space-y-1"><input type="hidden" name="inventoryItemId" value={item.id} /><input name="quantity" required placeholder="Quantity" className="h-8 w-full rounded border border-slate-700 bg-slate-950 px-2 text-xs" /><input name="unitCost" required placeholder="Unit cost" className="h-8 w-full rounded border border-slate-700 bg-slate-950 px-2 text-xs" /><button className="h-8 w-full rounded bg-emerald-600 text-xs">Add stock</button></form><form action={adjustInventoryAction} className="space-y-1"><input type="hidden" name="inventoryItemId" value={item.id} /><input name="delta" required placeholder="+/- quantity" className="h-8 w-full rounded border border-slate-700 bg-slate-950 px-2 text-xs" /><input name="reason" required placeholder="Reason" className="h-8 w-full rounded border border-slate-700 bg-slate-950 px-2 text-xs" /><button className="h-8 w-full rounded border border-slate-600 text-xs">Adjust</button></form><form action={recordInventoryWasteAction} className="space-y-1"><input type="hidden" name="inventoryItemId" value={item.id} /><input name="quantity" required placeholder="Waste quantity" className="h-8 w-full rounded border border-slate-700 bg-slate-950 px-2 text-xs" /><input name="reason" required placeholder="Reason" className="h-8 w-full rounded border border-slate-700 bg-slate-950 px-2 text-xs" /><button className="h-8 w-full rounded border border-rose-500/50 text-xs text-rose-300">Record waste</button></form></div></article>; })}{items.length === 0 ? <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center text-sm text-slate-500 lg:col-span-2">No materials or supplies yet.</div> : null}</div>
+  </div>;
 }
 
 async function CategoriesTab() {

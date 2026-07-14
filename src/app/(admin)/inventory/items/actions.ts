@@ -16,15 +16,15 @@ export async function createInventoryItemAction(formData: FormData) {
 
 export async function addInventoryStockAction(formData: FormData) {
   await addInventoryStock({ inventoryItemId: value(formData, "inventoryItemId"), quantity: value(formData, "quantity"), unitCost: value(formData, "unitCost"), supplier: value(formData, "supplier"), reference: value(formData, "reference"), note: value(formData, "note") });
-  revalidatePath("/inventory/items");
+  revalidatePath("/inventory/items"); revalidatePath("/inventory");
 }
 
 export async function adjustInventoryAction(formData: FormData) {
   await adjustInventory({ inventoryItemId: value(formData, "inventoryItemId"), delta: value(formData, "delta"), reason: value(formData, "reason"), note: value(formData, "note") });
-  revalidatePath("/inventory/items");
+  revalidatePath("/inventory/items"); revalidatePath("/inventory");
 }
 
 export async function recordInventoryWasteAction(formData: FormData) {
   await recordInventoryWaste({ inventoryItemId: value(formData, "inventoryItemId"), quantity: value(formData, "quantity"), reason: value(formData, "reason"), note: value(formData, "note") });
-  revalidatePath("/inventory/items");
+  revalidatePath("/inventory/items"); revalidatePath("/inventory");
 }
