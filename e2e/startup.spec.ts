@@ -52,7 +52,9 @@ test("creates and edits a product with a variant", async ({
 
   await page.goto("/products/new");
   await page.getByLabel("Product name").fill(`Phase Two Mug ${suffix}`);
-  await page.getByLabel("Category").selectOption({ label: category });
+  const categoryPicker = page.getByPlaceholder("Search categories...");
+  await categoryPicker.fill(category);
+  await page.getByRole("option", { name: category }).click();
   await page.getByLabel("SKU").fill(`MUG-${suffix}`);
   await page.getByLabel("Selling price").fill("15.00");
   await page.getByLabel("Production cost").fill("5.00");
