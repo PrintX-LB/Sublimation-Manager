@@ -14,3 +14,5 @@ next-env.d.ts
 data/
 uploads/
 backups/
+print-sheets/
+test_print_sheets_base/

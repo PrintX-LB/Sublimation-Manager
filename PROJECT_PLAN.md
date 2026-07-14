@@ -79,6 +79,24 @@ QR production tickets, scanner routes, QR tokens and barcode-printer integration
 - Sheet assignment history is retained while only ACTIVE assignments block pairing; release and regeneration operations are transactional and idempotent.
 - Production board cards expose the active attempt and keep incident, artwork and payment actions available without duplicating their services.
 
+## Cross-Module QA and Stabilization
+
+- End-to-end customer, order, artwork, payment and production workflows are reviewed together.
+- Production sheet assignment, incident/reprint and recipe consumption paths are checked for idempotency and historical integrity.
+- Test suites use isolated SQLite copies and mock Next cache invalidation outside a request context.
+- Backup/restore validation includes checksums, staged SQLite loading, safety backups and storage remapping.
+- Release readiness is tracked against the migration, storage, backup, workflow, test and build checks below.
+
+### Release-readiness checklist
+
+- [ ] Apply all Prisma migrations to the target local database.
+- [ ] Create and verify a manual backup before desktop packaging.
+- [ ] Confirm configured order and sheet folders are writable and included in backup scope.
+- [ ] Verify customer/order/payment, production, reprint and sheet release workflows with disposable data.
+- [ ] Run Prisma validation/generation, TypeScript, ESLint, unit tests and production build.
+- [ ] Run selected Playwright smoke workflows against an isolated database.
+- [ ] Review known limitations and confirm no runtime data, secrets or generated files are staged.
+
 ## Next milestone: Revenue and Reports
 
 Build a server-aggregated financial dashboard with collected revenue, order value, outstanding balances, estimated profit, monthly trends, product/customer reports and CSV exports.
