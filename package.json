@@ -13,6 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "test:migrations:clean": "node scripts/verify-clean-install.mjs --repeat",
+    "verify:clean-install": "node scripts/verify-clean-install.mjs --repeat",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio"
