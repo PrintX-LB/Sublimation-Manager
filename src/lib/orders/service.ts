@@ -6,6 +6,13 @@ import type { OrderInput } from "@/lib/validation/order";
 import { COMMIT_STATUS, isOrderStatus, normalizeOrderStatus } from "./status";
 import { changeInventoryQuantity } from "@/lib/inventory/service";
 import { consumeRecipeStage } from "@/lib/production/recipes";
+import {
+  OTHER_MATERIAL_WASTE_OPTIONS,
+  PRODUCTION_INCIDENT_REASONS,
+  type ProductionIncidentReason,
+} from "./production-incident-options";
+
+export { OTHER_MATERIAL_WASTE_OPTIONS, PRODUCTION_INCIDENT_REASONS } from "./production-incident-options";
 
 function decimal(value: string | Prisma.Decimal) {
   return new Prisma.Decimal(value.toString());
@@ -84,25 +91,6 @@ async function moveStock(
     },
   });
 }
-
-export const PRODUCTION_INCIDENT_REASONS = [
-  "Damaged during pressing",
-  "Misprint",
-  "Wrong artwork",
-  "Machine failure",
-  "Customer-requested change",
-  "Other",
-] as const;
-
-export type ProductionIncidentReason = (typeof PRODUCTION_INCIDENT_REASONS)[number];
-
-export const OTHER_MATERIAL_WASTE_OPTIONS = [
-  "None",
-  "Sublimation paper",
-  "Ink",
-  "Heat tape",
-  "Other",
-] as const;
 
 /**
  * Records a failed production attempt and allocates exactly one replacement

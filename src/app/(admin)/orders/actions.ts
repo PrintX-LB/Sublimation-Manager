@@ -10,9 +10,8 @@ import {
   addPayment,
   updateCommittedItemQuantity,
   recordProductionIncident,
-  PRODUCTION_INCIDENT_REASONS,
-  OTHER_MATERIAL_WASTE_OPTIONS,
 } from "@/lib/orders/service";
+import { PRODUCTION_INCIDENT_REASONS, OTHER_MATERIAL_WASTE_OPTIONS } from "@/lib/orders/production-incident-options";
 import { prisma } from "@/lib/db/prisma";
 import { saveUploadedFile } from "@/lib/files/local-file-storage";
 import { saveArtworkFile } from "@/lib/files/artwork-storage";

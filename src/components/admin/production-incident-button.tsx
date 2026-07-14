@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { recordProductionIncidentAction } from "@/app/(admin)/orders/actions";
-import { OTHER_MATERIAL_WASTE_OPTIONS, PRODUCTION_INCIDENT_REASONS } from "@/lib/orders/service";
+import { OTHER_MATERIAL_WASTE_OPTIONS, PRODUCTION_INCIDENT_REASONS } from "@/lib/orders/production-incident-options";
 
 type ActionResult = { error?: string; success?: string };
 type WasteOption = { inventoryItemId: string; name: string; quantity: string; unit: string; currentQuantity: string };
