@@ -1,7 +1,7 @@
 export const A4_SHEET = { widthMm: 210, heightMm: 297, dpi: 300 } as const;
 export const MUG_DESIGN = { widthMm: 210, heightMm: 95 } as const;
 
-export function mmToPixels(mm: number, dpi = A4_SHEET.dpi) {
+export function mmToPixels(mm: number, dpi: number = A4_SHEET.dpi) {
   return Math.round((mm / 25.4) * dpi);
 }
 

@@ -9,11 +9,15 @@ import {
   transitionOrder,
   addPayment,
   updateCommittedItemQuantity,
+  recordProductionIncident,
+  PRODUCTION_INCIDENT_REASONS,
+  OTHER_MATERIAL_WASTE_OPTIONS,
 } from "@/lib/orders/service";
 import { prisma } from "@/lib/db/prisma";
 import { saveUploadedFile } from "@/lib/files/local-file-storage";
 import { saveArtworkFile } from "@/lib/files/artwork-storage";
 import { requireAdmin } from "@/lib/admin-session";
+import { correctMaterialConsumption } from "@/lib/production/recipes";
 import { mkdir, writeFile, rm } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
@@ -277,6 +281,63 @@ export async function updateOrderPriorityAction(formData: FormData) {
   await prisma.order.update({ where: { id }, data: { priority } });
   revalidatePath("/production");
   revalidatePath(`/orders/${id}`);
+}
+
+export async function recordProductionIncidentAction(formData: FormData) {
+  const orderItemId = String(formData.get("orderItemId") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const note = String(formData.get("note") ?? "").trim();
+  const idempotencyKey = String(formData.get("idempotencyKey") ?? "").trim();
+  const blankOutcome = String(formData.get("blankProductOutcome") ?? "").trim();
+  const otherMaterialWasted = String(formData.get("otherMaterialWasted") ?? "").trim();
+  let wastedMaterials: Array<{ inventoryItemId: string; quantity: string }> = [];
+  try {
+    const parsedWaste = JSON.parse(String(formData.get("wastedMaterials") ?? "[]")) as unknown;
+    if (Array.isArray(parsedWaste)) wastedMaterials = parsedWaste.filter((entry): entry is { inventoryItemId: string; quantity: string } => typeof entry === "object" && entry !== null && typeof (entry as { inventoryItemId?: unknown }).inventoryItemId === "string" && typeof (entry as { quantity?: unknown }).quantity === "string");
+  } catch {
+    return { error: "The selected material waste is invalid." };
+  }
+  if (!orderItemId || !idempotencyKey) return { error: "The incident form is incomplete. Please try again." };
+  if (blankOutcome !== "damaged" && blankOutcome !== "usable")
+    return { error: "Select whether the blank product was damaged or is still usable." };
+  if (!(OTHER_MATERIAL_WASTE_OPTIONS as readonly string[]).includes(otherMaterialWasted))
+    return { error: "Select the other material wasted option." };
+  if (!(PRODUCTION_INCIDENT_REASONS as readonly string[]).includes(reason))
+    return { error: "Select a valid production incident reason." };
+  try {
+    await recordProductionIncident({ orderItemId, reason, note, idempotencyKey, blankProductDamaged: blankOutcome === "damaged", otherMaterialWasted, wastedMaterials });
+    revalidatePath("/production");
+    revalidatePath("/orders");
+    const item = await prisma.orderItem.findUnique({ where: { id: orderItemId }, select: { orderId: true } });
+    if (item) revalidatePath(`/orders/${item.orderId}`);
+    return { success: "The failed attempt was recorded and a replacement was queued." };
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    const messages: Record<string, string> = {
+      INSUFFICIENT_STOCK: "There is not enough blank stock for this reprint.",
+      ORDER_NOT_IN_PRODUCTION: "Only orders currently in production can be reprinted.",
+      PRODUCTION_ATTEMPT_ALREADY_FAILED: "This production attempt is already marked as failed.",
+      ORDER_ITEM_NOT_FOUND: "The order item could not be found.",
+      VARIANT_NOT_FOUND: "The product variant for this item is no longer available.",
+      STOCK_CONFLICT: "Stock changed while recording the reprint. Please try again.",
+      BLANK_OUTCOME_REQUIRED: "Select whether the blank product was damaged or is still usable.",
+      MATERIAL_NOT_IN_RECIPE: "Select only materials configured in this product's active recipe.",
+      INSUFFICIENT_RECIPE_STOCK: "There is not enough stock for one or more selected materials.",
+    };
+    return { error: messages[code] ?? "The reprint could not be recorded. Please try again." };
+  }
+}
+
+export async function correctMaterialConsumptionAction(formData: FormData) {
+  await requireAdmin();
+  const consumptionId = String(formData.get("consumptionId") ?? "").trim();
+  const delta = String(formData.get("delta") ?? "").trim();
+  const reason = String(formData.get("reason") ?? "").trim();
+  const idempotencyKey = String(formData.get("idempotencyKey") ?? "").trim();
+  if (!consumptionId || !delta || !reason || !idempotencyKey) throw new Error("Correction reason, quantity and confirmation are required.");
+  await correctMaterialConsumption({ consumptionId, delta, reason, note: String(formData.get("note") ?? "").trim(), idempotencyKey });
+  const item = await prisma.productionMaterialConsumption.findUnique({ where: { id: consumptionId }, select: { orderId: true } });
+  if (item?.orderId) revalidatePath(`/orders/${item.orderId}`);
 }
 export async function addPaymentAction(
   _state: FormState,

@@ -4,6 +4,8 @@ import { decimalToCents } from "@/lib/money";
 import { calculateTotals } from "./totals";
 import type { OrderInput } from "@/lib/validation/order";
 import { COMMIT_STATUS, isOrderStatus, normalizeOrderStatus } from "./status";
+import { changeInventoryQuantity } from "@/lib/inventory/service";
+import { consumeRecipeStage } from "@/lib/production/recipes";
 
 function decimal(value: string | Prisma.Decimal) {
   return new Prisma.Decimal(value.toString());
@@ -21,6 +23,8 @@ async function moveStock(
   reason: string,
   orderId?: string,
   orderItemId?: string,
+  productionIncidentId?: string,
+  productionAttemptId?: string,
 ) {
   if (delta.isZero()) return;
   const variant = await tx.productVariant.findUnique({
@@ -31,6 +35,23 @@ async function moveStock(
   const before = decimal(variant.stockQuantity);
   if (delta.isNegative() && before.lessThan(delta.abs()))
     throw new Error("INSUFFICIENT_STOCK");
+  const inventoryItem = tx.inventoryItem
+    ? await tx.inventoryItem.findUnique({ where: { productVariantId: variantId }, select: { id: true, baseUnit: true } })
+    : null;
+  if (inventoryItem) {
+    await changeInventoryQuantity(tx, {
+      inventoryItemId: inventoryItem.id,
+      delta,
+      transactionType: movementType === "production_reprint" ? "PRODUCTION_INCIDENT" : "ORDER_CONSUMPTION",
+      reason,
+      unit: inventoryItem.baseUnit,
+      orderId,
+      orderItemId,
+      productionIncidentId,
+      productionAttemptId,
+      syncProductVariant: false,
+    });
+  }
   const updated = await tx.productVariant.updateMany({
     where: {
       id: variantId,
@@ -58,7 +79,153 @@ async function moveStock(
       stockAfter: after,
       movementType,
       reason,
+      productionIncidentId,
+      productionAttemptId,
     },
+  });
+}
+
+export const PRODUCTION_INCIDENT_REASONS = [
+  "Damaged during pressing",
+  "Misprint",
+  "Wrong artwork",
+  "Machine failure",
+  "Customer-requested change",
+  "Other",
+] as const;
+
+export type ProductionIncidentReason = (typeof PRODUCTION_INCIDENT_REASONS)[number];
+
+export const OTHER_MATERIAL_WASTE_OPTIONS = [
+  "None",
+  "Sublimation paper",
+  "Ink",
+  "Heat tape",
+  "Other",
+] as const;
+
+/**
+ * Records a failed production attempt and allocates exactly one replacement
+ * blank in the same SQLite transaction. The idempotency key is supplied by
+ * the confirmation form and makes retries safe.
+ */
+export async function recordProductionIncident(input: {
+  orderItemId: string;
+  reason: string;
+  note?: string;
+  idempotencyKey: string;
+  blankProductDamaged: boolean;
+  otherMaterialWasted: string;
+  wastedMaterials?: Array<{ inventoryItemId: string; quantity: string }>;
+}) {
+  if (!PRODUCTION_INCIDENT_REASONS.includes(input.reason as ProductionIncidentReason))
+    throw new Error("INVALID_INCIDENT_REASON");
+  if (!input.idempotencyKey.trim()) throw new Error("IDEMPOTENCY_KEY_REQUIRED");
+  if (typeof input.blankProductDamaged !== "boolean") throw new Error("BLANK_OUTCOME_REQUIRED");
+  if (!(OTHER_MATERIAL_WASTE_OPTIONS as readonly string[]).includes(input.otherMaterialWasted))
+    throw new Error("INVALID_MATERIAL_WASTE");
+
+  return prisma.$transaction(async (tx) => {
+    const existing = await tx.productionIncident.findUnique({
+      where: { idempotencyKey: input.idempotencyKey },
+      include: { failedAttempt: true, replacementAttempt: true, stockMovement: true },
+    });
+    if (existing) return existing;
+
+    const item = await tx.orderItem.findUnique({
+      where: { id: input.orderItemId },
+      include: {
+        order: { select: { id: true, orderNumber: true, status: true, actualProductionCost: true } },
+        productVariant: { select: { id: true, stockPerUnit: true, productionCost: true, stockQuantity: true } },
+        productionAttempts: { orderBy: { attemptNumber: "desc" }, take: 1 },
+      },
+    });
+    if (!item) throw new Error("ORDER_ITEM_NOT_FOUND");
+    if (!["Ready to print", "In production"].includes(item.order.status))
+      throw new Error("ORDER_NOT_IN_PRODUCTION");
+    if (!item.productVariant) throw new Error("VARIANT_NOT_FOUND");
+
+    const latest = item.productionAttempts[0];
+    if (latest?.status === "Failed") throw new Error("PRODUCTION_ATTEMPT_ALREADY_FAILED");
+    const incident = await tx.productionIncident.create({
+      data: {
+        orderItemId: item.id,
+        idempotencyKey: input.idempotencyKey,
+        reason: input.reason,
+        note: input.note?.trim() || null,
+        blankProductDamaged: input.blankProductDamaged,
+        otherMaterialWasted: input.otherMaterialWasted,
+        additionalMaterialCost: input.blankProductDamaged ? item.productVariant.productionCost : new Prisma.Decimal(0),
+      },
+    });
+    const failedAttempt = latest
+      ? await tx.productionAttempt.update({ where: { id: latest.id }, data: { status: "Failed" } })
+      : await tx.productionAttempt.create({
+          data: { orderItemId: item.id, attemptNumber: 1, status: "Failed" },
+        });
+    const replacementAttempt = await tx.productionAttempt.create({
+      data: {
+        orderItemId: item.id,
+        attemptNumber: failedAttempt.attemptNumber + 1,
+        status: "Ready to Print",
+        blankConsumed: input.blankProductDamaged,
+      },
+    });
+    let additionalCost = new Prisma.Decimal(0);
+    let wasteCost = new Prisma.Decimal(0);
+    const recipe = item.productVariant && tx.productionRecipe
+      ? await tx.productionRecipe.findFirst({ where: { productVariantId: item.productVariant.id, active: true }, include: { items: true } })
+      : null;
+    const recipeMaterialIds = new Set((recipe?.items ?? []).filter((line) => line.materialRole !== "BLANK_PRODUCT").map((line) => line.inventoryItemId));
+    if (input.blankProductDamaged) {
+      const stockQuantity = new Prisma.Decimal(item.productVariant.stockPerUnit);
+      await moveStock(
+        tx,
+        item.productVariant.id,
+        stockQuantity.neg(),
+        "production_reprint",
+        `Production incident ${incident.id} for ${item.order.orderNumber}, attempt ${replacementAttempt.attemptNumber}`,
+        item.order.id,
+        item.id,
+        incident.id,
+        replacementAttempt.id,
+      );
+      await tx.order.update({
+        where: { id: item.order.id },
+        data: { actualProductionCost: { increment: item.productVariant.productionCost } },
+      });
+      additionalCost = additionalCost.add(item.productVariant.productionCost);
+    }
+    for (const [index, waste] of (input.wastedMaterials ?? []).entries()) {
+      if (!recipeMaterialIds.has(waste.inventoryItemId)) throw new Error("MATERIAL_NOT_IN_RECIPE");
+      const quantity = new Prisma.Decimal(waste.quantity);
+      if (!quantity.isFinite() || quantity.isNegative() || quantity.isZero()) throw new Error("INVALID_WASTE_QUANTITY");
+      const inventory = await tx.inventoryItem.findUnique({ where: { id: waste.inventoryItemId }, select: { baseUnit: true, unitCost: true, isActive: true } });
+      if (!inventory) throw new Error("INVENTORY_ITEM_NOT_FOUND");
+      const transaction = await changeInventoryQuantity(tx, { inventoryItemId: waste.inventoryItemId, delta: quantity.neg(), transactionType: "PRODUCTION_INCIDENT", reason: `Material wasted during incident ${incident.id}`, unit: inventory.baseUnit, unitCost: inventory.unitCost, totalCost: quantity.mul(inventory.unitCost), orderId: item.order.id, orderItemId: item.id, productionIncidentId: incident.id, productionAttemptId: replacementAttempt.id, idempotencyKey: `${input.idempotencyKey}:waste:${index}:${waste.inventoryItemId}` });
+      additionalCost = additionalCost.add(quantity.mul(inventory.unitCost));
+      wasteCost = wasteCost.add(quantity.mul(inventory.unitCost));
+      void transaction;
+    }
+    if (!wasteCost.isZero()) {
+      await tx.order.update({ where: { id: item.order.id }, data: { actualProductionCost: { increment: wasteCost } } });
+    }
+    return tx.productionIncident.update({
+      where: { id: incident.id },
+      data: { failedAttemptId: failedAttempt.id, replacementAttemptId: replacementAttempt.id, additionalMaterialCost: additionalCost },
+      include: { failedAttempt: true, replacementAttempt: true, stockMovement: true },
+    });
+  }).catch(async (error: unknown) => {
+    // A concurrent retry can win the idempotency unique index first. Return
+    // that committed result instead of asking the operator to deduct again.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+      const existing = await prisma.productionIncident.findUnique({
+        where: { idempotencyKey: input.idempotencyKey },
+        include: { failedAttempt: true, replacementAttempt: true, stockMovement: true },
+      });
+      if (existing) return existing;
+    }
+    throw error;
   });
 }
 
@@ -296,6 +463,20 @@ export async function transitionOrder(id: string, target: string) {
         data: { status: normalizedTarget, stockCommitted: false, stockCommittedAt: null, ...completionFields },
       });
     }
+    if (normalizedTarget === "In production" || normalizedTarget === "Completed") {
+      const stage = normalizedTarget === "In production" ? "PRODUCTION_START" : "PRODUCTION_COMPLETION";
+      for (const item of order.items) {
+        if (!item.productVariantId) continue;
+        await consumeRecipeStage(tx, {
+          productVariantId: item.productVariantId,
+          stage,
+          multiplier: item.quantity.toString(),
+          orderId: order.id,
+          orderItemId: item.id,
+          idempotencyPrefix: `order:${order.id}:item:${item.id}:stage:${stage}`,
+        });
+      }
+    }
     return tx.order.update({ where: { id }, data: { status: normalizedTarget, ...completionFields } });
   });
 }
@@ -419,8 +600,27 @@ export function getOrder(id: string) {
       customer: true,
       items: {
         include: {
-          productVariant: true,
+          productVariant: {
+            include: {
+              productionRecipe: { include: { items: { include: { inventoryItem: true } } } },
+            },
+          },
           stockMovements: true,
+          productionAttempts: {
+            orderBy: { attemptNumber: "asc" },
+            include: {
+              failedIncident: true,
+              replacementIncident: true,
+            },
+          },
+          productionIncidents: {
+            orderBy: { createdAt: "asc" },
+            include: { stockMovement: true },
+          },
+          materialConsumptions: {
+            orderBy: { createdAt: "asc" },
+            include: { recipeItem: { include: { inventoryItem: true } } },
+          },
           artworkProject: {
             include: { versions: { orderBy: { version: "desc" } } },
           },
