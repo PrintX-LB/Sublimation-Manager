@@ -15,7 +15,7 @@ A local-first administration application for a single-user sublimation-printing 
 - Node.js 20 or newer
 - npm
 
-No external account, hosted database, API key, or environment variable is required.
+No external account or hosted database is required. Prisma does require a local `DATABASE_URL`.
 
 ## Setup
 
@@ -27,9 +27,17 @@ npx prisma migrate dev
 npm run dev
 ```
 
+Before the first Prisma command, create the root `.env` file without overwriting an existing one:
+
+```powershell
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+```
+
+The checked-in `.env.example` points at the existing local database (`data/sublimation.db`) so development does not reset or replace your current data. Keep any existing `DATABASE_URL` in `.env`; never commit `.env`.
+
 Open <http://localhost:3000>. The root route opens the administration dashboard directly.
 
-`npx prisma migrate dev` creates the local database at `data/sublimation.db`, applies all migrations, and generates the Prisma client. The database file is excluded from Git.
+`npx prisma migrate dev` applies migrations and generates the Prisma client using the path in `.env`. The default is `data/sublimation.db`; the database file is excluded from Git. Prisma resolves relative SQLite URLs from `prisma/schema.prisma`, so `file:../data/sublimation.db` resolves to the repository's `data/sublimation.db`.
 
 ## Local database
 
