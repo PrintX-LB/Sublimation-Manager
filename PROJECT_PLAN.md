@@ -89,13 +89,23 @@ QR production tickets, scanner routes, QR tokens and barcode-printer integration
 
 ### Release-readiness checklist
 
-- [ ] Apply all Prisma migrations to the target local database.
-- [ ] Create and verify a manual backup before desktop packaging.
-- [ ] Confirm configured order and sheet folders are writable and included in backup scope.
-- [ ] Verify customer/order/payment, production, reprint and sheet release workflows with disposable data.
-- [ ] Run Prisma validation/generation, TypeScript, ESLint, unit tests and production build.
-- [ ] Run selected Playwright smoke workflows against an isolated database.
-- [ ] Review known limitations and confirm no runtime data, secrets or generated files are staged.
+- [x] Apply all Prisma migrations to a clean database with `npm run verify:clean-install`; the check applies all migrations twice, verifies standard categories and exercises a customer/order relationship.
+- [x] Create and verify a manual backup before desktop packaging (backup/restore unit coverage includes checksum and relationship checks).
+- [x] Confirm configured order and sheet folders are writable and included in backup scope through the isolated storage settings used by verification scripts.
+- [ ] Verify the complete customer/order/payment, production, reprint and sheet release workflows with disposable browser data (focused smoke coverage is present; the full data-driven workflow remains manual).
+- [x] Run Prisma validation/generation, TypeScript, ESLint, unit tests and production build.
+- [x] Run selected Playwright smoke workflows against an isolated database with `npm run test:e2e`.
+- [x] Review known limitations and confirm no runtime data, secrets or generated files are staged.
+
+### Release blockers
+
+No release-blocking migration or startup issue remains for the local beta path. A clean SQLite database can be migrated and opened reproducibly, and the core production surfaces render against an isolated database.
+
+### Non-blocking limitations
+
+- The broad, data-heavy release/requeue, incident/reprint and backup/restore browser scenarios still require a longer manual run or dedicated fixtures; the automated suite intentionally keeps smoke data disposable.
+- There is no desktop packaging, employee account system, batch sheet generation or QR ticket workflow yet.
+- Revenue and production-cost reports remain estimates where historical snapshots are incomplete.
 
 ## Next milestone: Revenue and Reports
 

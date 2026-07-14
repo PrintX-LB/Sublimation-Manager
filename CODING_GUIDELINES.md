@@ -14,6 +14,8 @@
 - Recipe changes must not rewrite historical material-consumption records.
 - Keep money calculations decimal-safe and use historical order snapshots.
 - Run TypeScript, ESLint, unit tests, relevant Playwright tests and the production build.
+- Clean-install verification must use the real Prisma schema and migrations with a newly created isolated SQLite file; on Windows, pre-create the empty target file before `prisma migrate deploy` to avoid the schema-engine missing-file failure.
+- Playwright and disposable verification workflows must use isolated SQLite, storage, sheet and backup paths and must disconnect Prisma before cleanup.
 - Never commit secrets, uploads, SQLite database files or `.env.local`.
 - Keep UI consistent with the PrintX dark theme and accessible controls.
 - Keep components focused and avoid premature abstraction.
