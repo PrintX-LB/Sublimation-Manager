@@ -1,5 +1,5 @@
 import { Archive } from "lucide-react";
-import { PageHeading } from "@/components/admin/page-heading";
+import { WorkflowHeader } from "@/components/admin/workflow-header";
 import { CategoryForm } from "@/components/products/category-form";
 import { listCategories } from "@/lib/repositories/products";
 import { archiveCategoryAction, saveCategoryAction } from "../actions";
@@ -8,9 +8,11 @@ export default async function CategoriesPage() {
   const categories = await listCategories();
   return (
     <>
-      <PageHeading
+      <WorkflowHeader
         title="Product categories"
         description="Create, rename and archive catalogue categories."
+        backLabel="Back to Products"
+        fallbackRoute="/products"
       />
       <section className="mt-8 rounded-2xl border bg-white p-6 shadow-panel">
         <h2 className="font-semibold">New category</h2>

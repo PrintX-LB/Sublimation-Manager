@@ -8,6 +8,8 @@ import sharp from "sharp";
 import { prisma } from "@/lib/db/prisma";
 import { A4_SHEET, SHEET_LAYOUT, nextSheetFilename, sheetLayout } from "@/lib/production-sheet";
 import { getPrintSheetBuilderFolder } from "@/lib/order-storage";
+import { mirrorArtworkForSheet } from "@/lib/production-sheet-render";
+import { nextPrintSheetNumber } from "@/lib/print-sheet-library";
 
 function text(value: unknown) { return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character); }
 
@@ -53,7 +55,7 @@ export async function createA4PrintSheetAction(formData: FormData) {
     if (!resolved.startsWith(`${uploadsRoot}${path.sep}`)) throw new Error("INVALID_ARTWORK_PATH");
     const metadata = await sharp(resolved).metadata();
     if (metadata.width !== SHEET_LAYOUT.designWidthPx || metadata.height !== SHEET_LAYOUT.designHeightPx) throw new Error("ARTWORK_DIMENSIONS_INVALID");
-    return { input: await sharp(resolved).png().toBuffer(), width: SHEET_LAYOUT.designWidthPx, height: SHEET_LAYOUT.designHeightPx };
+    return { input: await mirrorArtworkForSheet(await sharp(resolved).png().toBuffer()), width: SHEET_LAYOUT.designWidthPx, height: SHEET_LAYOUT.designHeightPx };
   }));
   const firstImage = images[0];
   const secondImage = images[1];
@@ -73,7 +75,13 @@ export async function createA4PrintSheetAction(formData: FormData) {
   const output = await sharp({ create: { width: SHEET_LAYOUT.widthPx, height: SHEET_LAYOUT.heightPx, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).withMetadata({ density: A4_SHEET.dpi }).png().toBuffer();
   await import("node:fs/promises").then(({ writeFile }) => writeFile(path.join(orderFolder, filename), output, { flag: "wx" }));
   const relative = path.relative(process.cwd(), path.join(orderFolder, filename)).replaceAll(path.sep, "/");
+  const sheet = await prisma.$transaction(async (tx) => {
+    const sheetNumber = await nextPrintSheetNumber(tx);
+    const created = await tx.printSheet.create({ data: { sheetNumber, filename, storagePath: relative, widthPx: SHEET_LAYOUT.widthPx, heightPx: SHEET_LAYOUT.heightPx, dpi: A4_SHEET.dpi, status: "READY_TO_PRINT", slots: { create: selected.map(({ version, item }, index) => ({ slotNumber: index + 1, artworkVersionId: version.id, orderId, orderItemId: item.id })) } } });
+    await tx.printSheetEvent.create({ data: { sheetId: created.id, eventType: "GENERATED", note: "A4 sheet generated from the order workspace." } });
+    return created;
+  });
   await prisma.orderFile.create({ data: { orderId, originalFilename: filename, storagePath: relative, mimeType: "image/png", sizeBytes: output.length } });
   revalidatePath(`/orders/${orderId}`);
-  redirect(`/orders/${orderId}/sheet?created=${encodeURIComponent(relative)}`);
+  redirect(`/orders/${orderId}/sheet?created=${encodeURIComponent(sheet.id)}`);
 }

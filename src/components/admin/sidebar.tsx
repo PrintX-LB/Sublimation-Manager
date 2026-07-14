@@ -19,6 +19,8 @@ const navigation = [
   { href: "/orders", label: "Orders", icon: ShoppingCart },
   { href: "/production", label: "Production", icon: ClipboardList },
   { href: "/production/sheet-builder", label: "Print Sheet Builder", icon: FileImage },
+  { href: "/production/sheets", label: "Generated Sheets", icon: FileImage },
+  { href: "/production/sheets/queue", label: "Sheet Pairing Queue", icon: FileImage },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/revenue", label: "Revenue", icon: TrendingUp },

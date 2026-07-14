@@ -12,7 +12,9 @@ import {
   Wallet,
 } from "lucide-react";
 import { PageHeading } from "@/components/admin/page-heading";
+import { BackNavigation } from "@/components/admin/back-navigation";
 import { PaymentForm } from "@/components/orders/payment-form";
+import { ProductionIncidentButton } from "@/components/admin/production-incident-button";
 import { getOrder } from "@/lib/orders/service";
 import { ORDER_STATUSES } from "@/lib/orders/status";
 import { orderIdSchema } from "@/lib/validation/order";
@@ -24,6 +26,7 @@ import {
   markFullyPaidAction,
   permanentlyDeleteTestOrderAction,
   transitionOrderAction,
+  correctMaterialConsumptionAction,
 } from "../actions";
 
 const statusProgress = [
@@ -154,18 +157,13 @@ export default async function OrderDetailPage({
 
   return (
     <div className="mx-auto max-w-7xl space-y-5">
+      <BackNavigation label="Back to Orders" fallbackRoute="/orders" />
       <header className="flex flex-wrap items-start justify-between gap-3">
         <PageHeading
           title={order.orderNumber}
           description={`${order.customer.fullName} · Created ${order.createdAt.toLocaleDateString("en-GB")}${order.dueDate ? ` · Due ${order.dueDate.toLocaleDateString("en-GB")}` : ""}`}
         />
         <div className="flex flex-wrap gap-2">
-          <Link
-            href="/orders"
-            className="rounded-lg border border-slate-700 px-3 py-2 text-sm"
-          >
-            Back to Orders
-          </Link>
           <Link
             href={`/orders/${id}/edit`}
             className="rounded-lg border border-slate-700 px-3 py-2 text-sm"
@@ -306,7 +304,51 @@ export default async function OrderDetailPage({
                           {item.artworkProject.versions.length === 1 ? "" : "s"}
                         </span>
                       ) : null}
+                      <ProductionIncidentButton
+                        orderItemId={item.id}
+                        productName={item.productNameSnapshot}
+                        wasteOptions={item.productVariant?.productionRecipe?.items.filter((line) => line.materialRole !== "BLANK_PRODUCT").map((line) => ({ inventoryItemId: line.inventoryItemId, name: line.inventoryItem.name, quantity: line.quantity.toString(), unit: line.unit, currentQuantity: line.inventoryItem.currentQuantity.toString() }))}
+                        disabledReason={
+                          order.status === "Cancelled"
+                            ? "Order is cancelled"
+                            : order.status === "Completed"
+                              ? "Order is completed"
+                              : !item.productVariant
+                                ? "Product is not linked to inventory"
+                                : undefined
+                        }
+                      />
                     </div>
+                    {item.productionAttempts.length ? (
+                      <div className="mt-3 border-t border-slate-800 pt-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Production attempts</p>
+                        <div className="mt-2 space-y-1">
+                          {item.productionAttempts.map((attempt) => {
+                            const incident = attempt.failedIncident;
+                            return (
+                              <div key={attempt.id} className="flex flex-wrap items-center justify-between gap-2 rounded bg-slate-950/50 px-2 py-1.5 text-xs">
+                                <span className="text-slate-300">Attempt {attempt.attemptNumber}</span>
+                                <span className={attempt.status === "Failed" ? "text-rose-300" : "text-emerald-300"}>{attempt.status}</span>
+                                {incident ? <span className="text-slate-500">{incident.reason}</span> : null}
+                                <span className="text-slate-500">{attempt.createdAt.toLocaleDateString("en-GB")}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                    {item.productVariant?.productionRecipe ? (
+                      <details className="mt-3 border-t border-slate-800 pt-3">
+                        <summary className="cursor-pointer text-xs font-semibold text-slate-400">Production recipe materials</summary>
+                        <div className="mt-2 space-y-1 text-xs">
+                          {item.productVariant.productionRecipe.items.map((line) => {
+                            const consumed = item.materialConsumptions.filter((entry) => entry.recipeItemId === line.id).reduce((sum, entry) => sum + Number(entry.quantity), 0);
+                            return <div key={line.id} className="flex flex-wrap justify-between gap-2"><span>{line.inventoryItem.name}</span><span className="text-slate-400">{line.quantity.toString()} {line.unit} / unit · {consumed > 0 ? `Consumed ${consumed} ${line.unit}` : `Pending ${line.consumptionStage}`}</span></div>;
+                          })}
+                          {item.materialConsumptions.map((consumption) => <div key={consumption.id} className="mt-2 rounded bg-slate-950/60 p-2"><div className="flex flex-wrap justify-between gap-2"><span>{consumption.materialNameSnapshot} · {consumption.materialRoleSnapshot}</span><span>{consumption.quantity.toString()} {consumption.unit} · {consumption.status}</span></div><p className="text-slate-500">{consumption.consumptionStage} · Unit cost {formatUSD(Number(consumption.unitCost))} · {consumption.createdAt.toLocaleString("en-GB")}</p>{admin ? <form action={correctMaterialConsumptionAction} className="mt-2 flex flex-wrap gap-1"><input type="hidden" name="consumptionId" value={consumption.id} /><input type="hidden" name="idempotencyKey" value={`correction:${consumption.id}:${order.updatedAt.getTime()}`} /><input name="delta" placeholder="+/- qty" required className="h-7 w-20 rounded border border-slate-700 bg-slate-950 px-1 text-[11px]" /><input name="reason" placeholder="Correction reason" required className="h-7 min-w-32 flex-1 rounded border border-slate-700 bg-slate-950 px-1 text-[11px]" /><button className="h-7 rounded border border-amber-500/50 px-2 text-[11px] text-amber-200">Correct</button></form> : null}</div>)}
+                        </div>
+                      </details>
+                    ) : <p className="mt-3 text-[11px] text-amber-300">No production recipe configured.</p>}
                   </article>
                 );
               })}

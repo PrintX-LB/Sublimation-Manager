@@ -1,7 +1,6 @@
-import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
-import { PageHeading } from "@/components/admin/page-heading";
+import { WorkflowHeader } from "@/components/admin/workflow-header";
 import { prisma } from "@/lib/db/prisma";
 import { SHEET_LAYOUT } from "@/lib/production-sheet";
 import { createA4PrintSheetAction } from "./actions";
@@ -41,9 +40,11 @@ export default async function A4SheetPage({
   const secondPreview = versions[1]?.path ?? firstPreview;
   return (
     <div className="mx-auto max-w-5xl space-y-5">
-      <PageHeading
+      <WorkflowHeader
         title="Create A4 Print Sheet"
         description={`${order.orderNumber} · two 210 × 95 mm mug designs on portrait A4`}
+        backLabel="Back to Order"
+        fallbackRoute={`/orders/${order.id}`}
       />
       {query.created ? (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-200">
@@ -131,12 +132,6 @@ export default async function A4SheetPage({
           <button className="w-full rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">
             Create A4 Print Sheet
           </button>
-          <Link
-            href={`/orders/${order.id}`}
-            className="block text-center text-sm text-slate-400"
-          >
-            Back to Order
-          </Link>
         </form>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { PageHeading } from "@/components/admin/page-heading";
+import { WorkflowHeader } from "@/components/admin/workflow-header";
 import { prisma } from "@/lib/db/prisma";
 import { OrderForm } from "@/components/orders/order-form";
 import { createOrderAction } from "../actions";
@@ -97,9 +97,11 @@ export default async function NewOrderPage({
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      <PageHeading
+      <WorkflowHeader
         title="New Order"
         description="Launch a new sublimation job sheet. Draft orders do not commit inventory stock levels."
+        backLabel="Back to Orders"
+        fallbackRoute="/orders"
       />
       <OrderForm
         action={createOrderAction}

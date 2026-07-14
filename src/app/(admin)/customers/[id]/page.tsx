@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Archive, Pencil } from "lucide-react";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/admin/page-heading";
+import { BackNavigation } from "@/components/admin/back-navigation";
 import { getCustomer } from "@/lib/repositories/customers";
 import { customerIdSchema } from "@/lib/validation/customer";
 import { archiveCustomerAction } from "../actions";
@@ -24,6 +25,7 @@ export default async function CustomerDetailPage({
   ].filter(Boolean);
   return (
     <>
+      <BackNavigation label="Back to Customers" fallbackRoute="/customers" />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <PageHeading
           title={customer.fullName}

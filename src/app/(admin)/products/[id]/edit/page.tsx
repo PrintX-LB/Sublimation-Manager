@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { PageHeading } from "@/components/admin/page-heading";
+import { WorkflowHeader } from "@/components/admin/workflow-header";
 import { ProductForm } from "@/components/products/product-form";
 import { getProduct, getProductFormOptions } from "@/lib/repositories/products";
 import { entityIdSchema } from "@/lib/validation/product";
@@ -35,7 +35,7 @@ export default async function EditProductPage({
   };
   return (
     <>
-      <PageHeading title="Edit product" description={product.name} />
+      <WorkflowHeader title="Edit product" description={product.name} backLabel="Back to Products" fallbackRoute="/products" />
       <ProductForm
         product={productForForm}
         categories={options[0]}

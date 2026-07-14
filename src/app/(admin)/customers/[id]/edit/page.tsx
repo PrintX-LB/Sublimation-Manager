@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { PageHeading } from "@/components/admin/page-heading";
+import { WorkflowHeader } from "@/components/admin/workflow-header";
 import { CustomerForm } from "@/components/customers/customer-form";
 import { getCustomer } from "@/lib/repositories/customers";
 import { customerIdSchema } from "@/lib/validation/customer";
@@ -16,9 +16,11 @@ export default async function EditCustomerPage({
   if (!customer || customer.isArchived) notFound();
   return (
     <>
-      <PageHeading
+      <WorkflowHeader
         title="Edit customer"
         description={`${customer.customerNumber} · ${customer.fullName}`}
+        backLabel="Back to Customers"
+        fallbackRoute="/customers"
       />
       <CustomerForm
         customer={customer}

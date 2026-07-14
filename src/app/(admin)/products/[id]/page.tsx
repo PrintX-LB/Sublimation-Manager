@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AlertTriangle, Archive, Pencil } from "lucide-react";
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/admin/page-heading";
+import { BackNavigation } from "@/components/admin/back-navigation";
 import { marginPercent, unitProfit, formatUSD } from "@/lib/money";
 import { getProduct } from "@/lib/repositories/products";
 import { entityIdSchema } from "@/lib/validation/product";
@@ -18,6 +19,7 @@ export default async function ProductDetailPage({
   if (!product || !product.isActive) notFound();
   return (
     <>
+      <BackNavigation label="Back to Products" fallbackRoute="/products" />
       <div className="flex flex-wrap items-end justify-between gap-4">
         <PageHeading
           title={product.name}

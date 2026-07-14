@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { PageHeading } from "@/components/admin/page-heading";
+import { BackNavigation } from "@/components/admin/back-navigation";
 import { ArtworkEditorShell } from "@/components/artwork/artwork-editor-shell";
 import { uploadArtworkAction } from "../../../../actions";
 import { mmToPixels } from "@/lib/artwork/geometry";
@@ -116,6 +117,7 @@ export default async function ArtworkPage({
 
   return (
     <>
+      <BackNavigation label="Back to Order" fallbackRoute={`/orders/${item.order.id}`} />
       <PageHeading
         title="Artwork Editor"
         description={`${item.order.orderNumber} · ${item.productNameSnapshot}`}

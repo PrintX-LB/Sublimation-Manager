@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { PageHeading } from "@/components/admin/page-heading";
+import { WorkflowHeader } from "@/components/admin/workflow-header";
 import { TemplateForm } from "@/components/print-templates/template-form";
 import { saveTemplateAction } from "../../actions";
 import { prisma } from "@/lib/db/prisma";
@@ -13,9 +13,11 @@ export default async function EditTemplate({
   if (!template) notFound();
   return (
     <>
-      <PageHeading
+      <WorkflowHeader
         title="Edit print template"
         description="Update dimensions used by linked products."
+        backLabel="Back to Print Templates"
+        fallbackRoute="/print-templates"
       />
       <TemplateForm action={saveTemplateAction} template={template} />
     </>

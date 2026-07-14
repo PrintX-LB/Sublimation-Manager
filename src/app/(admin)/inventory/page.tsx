@@ -41,6 +41,7 @@ export default async function InventoryPage({
     { id: "stock", label: "Stock", icon: Boxes },
     { id: "movements", label: "Stock Movements", icon: History },
     { id: "categories", label: "Categories", icon: FolderTree },
+    { id: "supplies", label: "Inventory V2", icon: Boxes },
   ];
 
   return (
@@ -58,7 +59,7 @@ export default async function InventoryPage({
           return (
             <Link
               key={t.id}
-              href={`/inventory?tab=${t.id}`}
+              href={t.id === "supplies" ? "/inventory/items" : `/inventory?tab=${t.id}`}
               className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-all ${
                 isActive
                   ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
