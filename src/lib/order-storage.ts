@@ -5,6 +5,9 @@ import { prisma } from "@/lib/db/prisma";
 const DEFAULT_RETENTION_DAYS = 15;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const settingsPath = () => {
+  if (process.env.PRINTX_STORAGE_SETTINGS_PATH) {
+    return path.resolve(process.env.PRINTX_STORAGE_SETTINGS_PATH);
+  }
   if (process.env.VITEST) {
     const poolId = process.env.VITEST_POOL_ID || "1";
     return path.resolve(process.cwd(), "data", `order-storage-settings-test-${poolId}.json`);

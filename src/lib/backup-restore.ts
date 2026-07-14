@@ -55,6 +55,9 @@ const DEFAULT_SETTINGS: BackupSettings = {
 };
 
 const settingsPath = () => {
+  if (process.env.PRINTX_BACKUP_SETTINGS_PATH) {
+    return path.resolve(process.env.PRINTX_BACKUP_SETTINGS_PATH);
+  }
   if (process.env.VITEST) {
     const poolId = process.env.VITEST_POOL_ID || "1";
     return path.resolve(process.cwd(), "data", `backup-settings-history-test-${poolId}.json`);
