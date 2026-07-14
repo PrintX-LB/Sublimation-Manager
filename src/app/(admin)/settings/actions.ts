@@ -1,9 +1,64 @@
 "use server";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { clearAdminSession, getAdminSession, setAdminSession, verifyAdminCredentials } from "@/lib/admin-session";
 export async function adminLoginAction(formData: FormData) { const ok = await verifyAdminCredentials(String(formData.get("username") ?? ""), String(formData.get("password") ?? "")); if (!ok) redirect("/settings?admin=invalid"); await setAdminSession(); redirect("/settings?admin=unlocked"); }
 export async function adminLogoutAction() { await clearAdminSession(); redirect("/settings?admin=locked"); }
-export async function resetDevelopmentDataAction(formData: FormData) { if (process.env.NODE_ENV !== "development") throw new Error("DEVELOPMENT_ONLY"); const { requireAdmin } = await import("@/lib/admin-session"); await requireAdmin(); if (String(formData.get("resetDevelopmentConfirmation")) !== "RESET") throw new Error("RESET_CONFIRMATION_REQUIRED"); const { prisma } = await import("@/lib/db/prisma"); await prisma.$transaction(async (tx) => { await tx.stockMovement.deleteMany(); await tx.payment.deleteMany(); await tx.orderFile.deleteMany(); await tx.orderItem.deleteMany(); await tx.order.deleteMany(); await tx.artworkVersion.deleteMany(); await tx.artworkProject.deleteMany(); }); redirect("/orders?reset=success"); }
+export type ResetDevelopmentResult = { ok: boolean; message: string; counts?: Record<string, number> };
+
+export async function resetDevelopmentDataAction(_previous: ResetDevelopmentResult | null, formData: FormData): Promise<ResetDevelopmentResult> {
+  if (process.env.NODE_ENV !== "development") return { ok: false, message: "Reset is available only in development mode." };
+  try {
+    const { requireAdmin } = await import("@/lib/admin-session");
+    await requireAdmin();
+  } catch {
+    return { ok: false, message: "Admin Mode is required." };
+  }
+  const confirmation = String(formData.get("resetDevelopmentConfirmation") ?? "").trim();
+  if (confirmation !== "RESET PRINTX DATA") return { ok: false, message: "Type RESET PRINTX DATA to continue." };
+
+  const { prisma } = await import("@/lib/db/prisma");
+  const [files, projects, versions, sheets] = await Promise.all([
+    prisma.orderFile.findMany({ select: { storagePath: true } }),
+    prisma.artworkProject.findMany({ select: { originalPath: true } }),
+    prisma.artworkVersion.findMany({ select: { editedPath: true, printReadyPath: true } }),
+    prisma.printSheet.findMany({ select: { storagePath: true } }),
+  ]);
+  try {
+    const counts = await prisma.$transaction(async (tx) => {
+      const materialConsumptions = await tx.productionMaterialConsumption.deleteMany();
+      const inventoryTransactions = await tx.inventoryTransaction.deleteMany();
+      const sheetSlots = await tx.printSheetSlot.deleteMany();
+      const sheetEvents = await tx.printSheetEvent.deleteMany();
+      const incidents = await tx.productionIncident.deleteMany();
+      const attempts = await tx.productionAttempt.deleteMany();
+      const stockMovements = await tx.stockMovement.deleteMany();
+      const payments = await tx.payment.deleteMany();
+      const orderFiles = await tx.orderFile.deleteMany();
+      const versions = await tx.artworkVersion.deleteMany();
+      const projects = await tx.artworkProject.deleteMany();
+      const sheets = await tx.printSheet.deleteMany();
+      const items = await tx.orderItem.deleteMany();
+      const orders = await tx.order.deleteMany();
+      const customers = await tx.customer.deleteMany();
+      return { materialConsumptions: materialConsumptions.count, inventoryTransactions: inventoryTransactions.count, sheetSlots: sheetSlots.count, sheetEvents: sheetEvents.count, incidents: incidents.count, attempts: attempts.count, stockMovements: stockMovements.count, payments: payments.count, orderFiles: orderFiles.count, artworkVersions: versions.count, artworkProjects: projects.count, printSheets: sheets.count, orderItems: items.count, orders: orders.count, customers: customers.count };
+    });
+    let fileErrors = 0;
+    const { rm } = await import("node:fs/promises");
+    for (const storedPath of [...files.map((file) => file.storagePath), ...projects.map((project) => project.originalPath), ...versions.flatMap((version) => [version.editedPath, version.printReadyPath]), ...sheets.map((sheet) => sheet.storagePath)]) {
+      try { await rm(storedPath, { force: true }); } catch { fileErrors += 1; }
+    }
+    revalidatePath("/settings");
+    revalidatePath("/dashboard");
+    revalidatePath("/orders");
+    revalidatePath("/customers");
+    revalidatePath("/production");
+    revalidatePath("/revenue");
+    return { ok: fileErrors === 0, message: fileErrors === 0 ? "Development data reset completed." : `Database reset completed, but ${fileErrors} file(s) could not be removed.`, counts: { ...counts, fileErrors } };
+  } catch {
+    return { ok: false, message: "Reset could not complete. No data was changed." };
+  }
+}
 import { saveOrderStorageSettings, runOrderStorageCleanup } from "@/lib/order-storage";
 import { requireAdmin } from "@/lib/admin-session";
 import { mkdir, writeFile, unlink, rm } from "node:fs/promises";

@@ -8,9 +8,9 @@ import { BackupForm } from "./backup-form";
 import {
   adminLoginAction,
   adminLogoutAction,
-  resetDevelopmentDataAction,
   runStorageCleanupAction,
 } from "./actions";
+import { ResetDevelopmentForm } from "./reset-development-form";
 
 export default async function SettingsPage({
   searchParams,
@@ -87,27 +87,7 @@ export default async function SettingsPage({
                 </button>
               </form>
               {process.env.NODE_ENV === "development" ? (
-                <div className="mt-6 border-t border-slate-800 pt-5">
-                  <h3 className="font-bold text-red-400 text-sm">Development utilities</h3>
-                  <p className="mt-1 text-xs text-red-400/80 leading-relaxed">
-                    Permanently deletes orders, payments, artwork and stock history. This action is irreversible.
-                  </p>
-                  <form action={resetDevelopmentDataAction} autoComplete="off" className="mt-3 flex gap-2">
-                    <input
-                      name="resetDevelopmentConfirmation"
-                      autoComplete="new-password"
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      required
-                      placeholder="Type RESET"
-                      className="rounded-lg border border-slate-800 bg-[#0f172a] px-3 py-1.5 text-sm text-slate-200 focus:outline-none"
-                    />
-                    <button className="rounded-lg bg-red-600 px-4 py-1.5 text-sm font-bold text-white hover:bg-red-700 transition">
-                      Reset
-                    </button>
-                  </form>
-                </div>
+                <ResetDevelopmentForm />
               ) : null}
             </div>
           ) : (
@@ -187,4 +167,3 @@ export default async function SettingsPage({
     </>
   );
 }
-
