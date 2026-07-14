@@ -1,4 +1,4 @@
-import { PageHeading } from "@/components/admin/page-heading";
+import { WorkflowHeader } from "@/components/admin/workflow-header";
 import { prisma } from "@/lib/db/prisma";
 import { SHEET_LAYOUT } from "@/lib/production-sheet";
 import { SheetBuilderForm } from "./sheet-builder-form";
@@ -95,9 +95,11 @@ export default async function SheetBuilderPage({
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      <PageHeading
+      <WorkflowHeader
         title="Print Sheet Builder"
         description="Combine two compatible mug transfers from any orders onto one A4 sheet."
+        backLabel="Back to Production"
+        fallbackRoute="/production"
       />
 
       <SheetBuilderForm

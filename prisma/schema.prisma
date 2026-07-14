@@ -96,10 +96,132 @@ model ProductVariant {
   product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
   orderItems     OrderItem[]
   stockMovements StockMovement[]
+  inventoryItem  InventoryItem?
+  productionRecipe ProductionRecipe?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
   @@index([productId])
+}
+
+model InventoryItem {
+  id                String   @id @default(uuid())
+  name              String
+  inventoryType     String
+  baseUnit          String
+  currentQuantity   Decimal  @default(0)
+  minimumQuantity   Decimal  @default(0)
+  unitCost          Decimal  @default(0)
+  sku               String?  @unique
+  brand             String?
+  supplier          String?
+  storageLocation   String?
+  notes             String?
+  isActive          Boolean  @default(true)
+  productVariantId  String?  @unique
+  productVariant    ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+  transactions      InventoryTransaction[]
+  recipeItems       ProductionRecipeItem[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([inventoryType, isActive])
+  @@index([name])
+}
+
+model InventoryTransaction {
+  id                    String   @id @default(uuid())
+  inventoryItemId       String
+  quantityChange        Decimal
+  quantityBefore        Decimal
+  quantityAfter         Decimal
+  unit                  String
+  transactionType       String
+  reason                String
+  unitCost              Decimal?
+  totalCost             Decimal?
+  supplier              String?
+  orderId               String?
+  orderItemId           String?
+  productionIncidentId  String?
+  productionAttemptId   String?
+  idempotencyKey        String?  @unique
+  note                  String?
+  correctsTransactionId String?
+  productionMaterialConsumptionId String? @unique
+  createdAt             DateTime @default(now())
+  inventoryItem         InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  order                 Order? @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem             OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  productionIncident    ProductionIncident? @relation(fields: [productionIncidentId], references: [id], onDelete: Restrict)
+  productionAttempt     ProductionAttempt? @relation(fields: [productionAttemptId], references: [id], onDelete: Restrict)
+  productionMaterialConsumption ProductionMaterialConsumption? @relation("ConsumptionTransaction", fields: [productionMaterialConsumptionId], references: [id], onDelete: Restrict)
+  correctsTransaction InventoryTransaction? @relation("TransactionCorrection", fields: [correctsTransactionId], references: [id], onDelete: Restrict)
+  corrections InventoryTransaction[] @relation("TransactionCorrection")
+
+  @@index([inventoryItemId, createdAt])
+  @@index([transactionType, createdAt])
+  @@index([orderId])
+}
+
+model ProductionRecipe {
+  id              String   @id @default(uuid())
+  productVariantId String  @unique
+  name            String
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  productVariant  ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
+  items           ProductionRecipeItem[]
+}
+
+model ProductionRecipeItem {
+  id             String   @id @default(uuid())
+  recipeId       String
+  inventoryItemId String
+  quantity       Decimal
+  unit           String
+  materialRole   String
+  consumptionStage String
+  required       Boolean  @default(true)
+  active         Boolean  @default(true)
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  recipe         ProductionRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  inventoryItem  InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  consumptions   ProductionMaterialConsumption[]
+  @@unique([recipeId, inventoryItemId, consumptionStage])
+  @@index([inventoryItemId])
+}
+
+model ProductionMaterialConsumption {
+  id             String   @id @default(uuid())
+  recipeItemId   String
+  orderId        String?
+  orderItemId    String?
+  productionAttemptId String?
+  productionIncidentId String?
+  printSheetId   String?
+  consumptionStage String
+  status         String   @default("Consumed")
+  materialNameSnapshot String
+  materialRoleSnapshot String
+  quantity       Decimal
+  unit           String
+  unitCost       Decimal
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+  recipeItem     ProductionRecipeItem @relation(fields: [recipeItemId], references: [id], onDelete: Restrict)
+  inventoryTransaction InventoryTransaction? @relation("ConsumptionTransaction")
+  order          Order? @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem      OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  productionAttempt ProductionAttempt? @relation(fields: [productionAttemptId], references: [id], onDelete: Restrict)
+  productionIncident ProductionIncident? @relation(fields: [productionIncidentId], references: [id], onDelete: Restrict)
+  printSheet     PrintSheet? @relation(fields: [printSheetId], references: [id], onDelete: Restrict)
+  @@unique([recipeItemId, productionAttemptId, consumptionStage])
+  @@index([orderId, orderItemId])
+  @@index([productionIncidentId])
 }
 
 model Sequence {
@@ -137,10 +259,13 @@ model Order {
   deliveredAt DateTime?
   cancelledAt DateTime?
   finalStatusAt DateTime?
+  actualProductionCost Decimal @default(0)
   filesDeletedAt DateTime?
   retainFilesPermanently Boolean @default(false)
   retentionExtendedUntil DateTime?
   printSheets PrintSheetSlot[]
+  inventoryTransactions InventoryTransaction[]
+  materialConsumptions ProductionMaterialConsumption[]
 
   @@index([customerId])
   @@index([status, dueDate])
@@ -176,6 +301,11 @@ model OrderItem {
   order                Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   productVariant       ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
   stockMovements       StockMovement[]
+  productionAttempts   ProductionAttempt[]
+  printSheetSlots       PrintSheetSlot[]
+  productionIncidents  ProductionIncident[]
+  inventoryTransactions InventoryTransaction[]
+  materialConsumptions ProductionMaterialConsumption[]
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
 
@@ -218,14 +348,28 @@ model ArtworkVersion {
 
 model PrintSheet {
   id          String   @id @default(uuid())
+  sheetNumber String?  @unique
   filename    String
   storagePath String
   widthPx     Int
   heightPx    Int
   dpi         Int
+  status      String   @default("READY_TO_PRINT")
+  updatedAt   DateTime @default(now()) @updatedAt
+  printedAt   DateTime?
+  cancelledAt DateTime?
+  sourceSheetId String?
+  regenerationRequestKey String? @unique
+  regenerationNumber Int @default(0)
+  notes       String?
   createdAt   DateTime @default(now())
   slots       PrintSheetSlot[]
+  materialConsumptions ProductionMaterialConsumption[]
+  sourceSheet PrintSheet? @relation("SheetRegenerations", fields: [sourceSheetId], references: [id], onDelete: Restrict)
+  regenerations PrintSheet[] @relation("SheetRegenerations")
+  events      PrintSheetEvent[]
   @@index([createdAt])
+  @@index([status, createdAt])
 }
 
 model PrintSheetSlot {
@@ -234,12 +378,32 @@ model PrintSheetSlot {
   slotNumber      Int
   artworkVersionId String
   orderId         String
+  orderItemId     String?
+  productionAttemptId String?
+  assignmentState String   @default("ACTIVE")
+  assignedAt      DateTime @default(now())
+  releasedAt      DateTime?
+  releaseReason   String?
+  supersedingSheetId String?
   sheet           PrintSheet     @relation(fields: [sheetId], references: [id], onDelete: Cascade)
   artworkVersion  ArtworkVersion @relation(fields: [artworkVersionId], references: [id], onDelete: Restrict)
   order           Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem       OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  productionAttempt ProductionAttempt? @relation(fields: [productionAttemptId], references: [id], onDelete: Restrict)
   @@unique([sheetId, slotNumber])
   @@index([artworkVersionId])
   @@index([orderId])
+}
+
+model PrintSheetEvent {
+  id            String   @id @default(uuid())
+  sheetId       String
+  eventType     String
+  note          String?
+  relatedSheetId String?
+  createdAt     DateTime @default(now())
+  sheet         PrintSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  @@index([sheetId, createdAt])
 }
 
 model Payment {
@@ -268,14 +432,61 @@ model StockMovement {
   stockAfter       Decimal
   reason           String
   note             String?
+  productionIncidentId String? @unique
+  productionAttemptId String? @unique
   productVariant   ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
   orderItem        OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
   order            Order?         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  productionIncident ProductionIncident? @relation(fields: [productionIncidentId], references: [id], onDelete: Restrict)
+  productionAttempt ProductionAttempt? @relation(fields: [productionAttemptId], references: [id], onDelete: Restrict)
   createdAt        DateTime       @default(now())
 
   @@index([productVariantId])
   @@index([orderItemId])
   @@index([orderId])
+}
+
+model ProductionAttempt {
+  id            String   @id @default(uuid())
+  orderItemId   String
+  attemptNumber Int
+  status        String   @default("Pending")
+  blankConsumed Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  orderItem     OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  failedIncident ProductionIncident? @relation("FailedAttempt")
+  replacementIncident ProductionIncident? @relation("ReplacementAttempt")
+  stockMovement   StockMovement?
+  inventoryTransactions InventoryTransaction[]
+  materialConsumptions ProductionMaterialConsumption[]
+  printSheetSlots PrintSheetSlot[]
+
+  @@unique([orderItemId, attemptNumber])
+  @@index([status])
+  @@index([orderItemId, createdAt])
+}
+
+model ProductionIncident {
+  id                    String   @id @default(uuid())
+  orderItemId           String
+  idempotencyKey        String   @unique
+  reason                String
+  note                  String?
+  blankProductDamaged   Boolean  @default(false)
+  otherMaterialWasted   String?
+  additionalMaterialCost Decimal @default(0)
+  failedAttemptId       String? @unique
+  replacementAttemptId  String? @unique
+  createdAt             DateTime @default(now())
+  orderItem             OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  failedAttempt         ProductionAttempt? @relation("FailedAttempt", fields: [failedAttemptId], references: [id], onDelete: Restrict)
+  replacementAttempt    ProductionAttempt? @relation("ReplacementAttempt", fields: [replacementAttemptId], references: [id], onDelete: Restrict)
+  stockMovement         StockMovement?
+  inventoryTransactions InventoryTransaction[]
+  materialConsumptions ProductionMaterialConsumption[]
+
+  @@index([orderItemId, createdAt])
 }
 
 model OrderFile {

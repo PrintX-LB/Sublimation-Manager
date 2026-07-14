@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, FileText, Zap } from "lucide-react";
 import { PageHeading } from "@/components/admin/page-heading";
+import { ProductionIncidentButton } from "@/components/admin/production-incident-button";
 import { prisma } from "@/lib/db/prisma";
 import { formatUSD } from "@/lib/money";
 import {
@@ -24,13 +25,15 @@ export default async function ProductionPage() {
       payments: { select: { amount: true } },
       items: {
         include: {
-          productVariant: true,
+          productVariant: { select: { stockQuantity: true, stockPerUnit: true } },
           artworkProject: {
             select: {
               activeVersionId: true,
               versions: { select: { id: true } },
             },
           },
+          printSheetSlots: { include: { sheet: { select: { id: true, sheetNumber: true, status: true } } } },
+          productionAttempts: { where: { status: { in: ["Ready to Print", "In production"] } }, orderBy: { attemptNumber: "desc" }, take: 1, select: { attemptNumber: true, status: true } },
         },
       },
     },
@@ -60,14 +63,15 @@ export default async function ProductionPage() {
         title="Production Board"
         description="A live workshop view of active orders."
       />
-      <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="flex flex-wrap gap-2"><Link href="/production/recipes" className="inline-flex rounded border border-slate-700 px-3 py-2 text-xs text-brand-200">Production Recipes</Link><Link href="/production/sheets" className="inline-flex rounded border border-slate-700 px-3 py-2 text-xs text-brand-200">Generated Print Sheets</Link><Link href="/production/sheets/queue" className="inline-flex rounded border border-slate-700 px-3 py-2 text-xs text-brand-200">Automatic Pairing Queue</Link></div>
+      <section className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/60 p-2">
         {summaries.map(([label, value]) => (
           <div
             key={label}
-            className="rounded-xl border border-slate-700 bg-slate-900/70 p-4"
+            className="min-w-[110px] flex-1 rounded-lg border border-slate-800 bg-slate-950/50 px-3 py-2"
           >
             <p className="text-xs text-slate-400">{label}</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-100">
+            <p className="mt-0.5 text-xl font-semibold text-slate-100">
               {value}
             </p>
           </div>
@@ -78,9 +82,9 @@ export default async function ProductionPage() {
           {PRODUCTION_COLUMNS.map((status) => (
             <section
               key={status}
-              className="flex min-h-[420px] flex-col rounded-xl border border-slate-700 bg-slate-950/50"
+              className="flex min-h-[300px] flex-col rounded-xl border border-slate-700 bg-slate-950/50"
             >
-              <header className="flex items-center justify-between border-b border-slate-800 px-3 py-3">
+              <header className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
                 <h2 className="text-sm font-semibold text-slate-200">
                   {status}
                 </h2>
@@ -88,9 +92,9 @@ export default async function ProductionPage() {
                   {groups[status].length}
                 </span>
               </header>
-              <div className="flex-1 space-y-3 overflow-y-auto p-3">
+              <div className="flex-1 space-y-2 overflow-y-auto p-2">
                 {groups[status].length ? (
-                  groups[status].map((order) => (
+                    groups[status].map((order) => (
                     <ProductionCard key={order.id} order={order} now={now} />
                   ))
                 ) : (
@@ -121,6 +125,8 @@ type BoardOrder = Awaited<ReturnType<typeof prisma.order.findMany>>[number] & {
       activeVersionId: string | null;
       versions: { id: string }[];
     } | null;
+    printSheetSlots: { sheet: { id: string; sheetNumber: string | null; status: string } }[];
+    productionAttempts: { attemptNumber: number; status: string }[];
   }>;
 };
 
@@ -152,7 +158,7 @@ function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
   const next = index >= 0 ? PRODUCTION_COLUMNS[index + 1] : undefined;
   return (
     <article
-      className={`rounded-lg border bg-slate-900 p-3 ${order.priority === "Urgent" ? "border-amber-400/70" : "border-slate-700"}`}
+      className={`rounded-lg border bg-slate-900 p-2.5 ${order.priority === "Urgent" ? "border-amber-400/70" : "border-slate-700"}`}
     >
       <div className="flex items-start justify-between gap-2">
         <Link
@@ -168,12 +174,13 @@ function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
       <p className="mt-1 truncate text-sm text-slate-300">
         {order.customer.fullName}
       </p>
-      <p className="mt-2 text-xs text-slate-400">
+      <p className="mt-1.5 text-xs text-slate-400">
         {order.items
           .map((item) => `${item.productNameSnapshot} ×${item.quantity}`)
           .join(", ")}
       </p>
-      <div className="mt-3 flex flex-wrap gap-1 text-[10px]">
+      {order.items.some((item) => item.productionAttempts.length) ? <p className="mt-1 text-[11px] text-slate-500">Attempt {order.items.find((item) => item.productionAttempts.length)?.productionAttempts[0]?.attemptNumber} · {order.items.find((item) => item.productionAttempts.length)?.productionAttempts[0]?.status}</p> : null}
+      <div className="mt-2 flex flex-wrap gap-1 text-[10px]">
         {overdue ? (
           <span className="rounded bg-rose-500/15 px-2 py-1 text-rose-300">
             Overdue
@@ -206,13 +213,14 @@ function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
           <FileText size={13} aria-label="Notes" />
         ) : null}
       </div>
-      <p className="mt-3 text-xs text-slate-500">
+      <p className="mt-2 text-xs text-slate-500">
         Due:{" "}
         {order.dueDate
           ? order.dueDate.toLocaleDateString("en-GB")
           : "No due date"}
       </p>
-      <div className="mt-3 flex flex-wrap gap-1">
+      {order.items.some((item) => item.printSheetSlots.length) ? <p className="mt-2 text-xs text-sky-300">Sheet {order.items.find((item) => item.printSheetSlots.length)?.printSheetSlots[0]?.sheet.sheetNumber ?? "linked"} · {order.items.find((item) => item.printSheetSlots.length)?.printSheetSlots[0]?.sheet.status.replaceAll("_", " ")}</p> : null}
+      <div className="mt-2 flex flex-wrap gap-1">
         <Link
           href={`/orders/${order.id}`}
           className="rounded border border-slate-700 px-2 py-1 text-[11px]"
@@ -249,6 +257,14 @@ function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
           </select>
           <button className="rounded border border-slate-700 px-2 py-1 text-[11px]">Change</button>
         </form>
+        {order.items.map((item) => (
+          <ProductionIncidentButton
+            key={item.id}
+            orderItemId={item.id}
+            productName={item.productNameSnapshot}
+            disabledReason={order.status === "Completed" ? "Order is completed" : item.productVariant ? undefined : "Product is not linked to inventory"}
+          />
+        ))}
       </div>
       <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-2">
         <form action={updateOrderPriorityAction}>

@@ -46,7 +46,6 @@ describe("Print Sheet Builder Transitions Integration Tests", () => {
       },
       include: { variants: true },
     });
-    productId = product.id;
     variantId = product.variants[0]!.id;
 
     const customer = await prisma.customer.create({

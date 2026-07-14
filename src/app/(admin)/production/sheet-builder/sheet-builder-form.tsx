@@ -476,6 +476,7 @@ export function SheetBuilderForm({ initialVersions, createdId, createdStoragePat
                           alt=""
                           fill
                           className="object-contain"
+                          style={{ transform: "scaleX(-1)" }}
                         />
                       </div>
                       <button
@@ -539,6 +540,7 @@ export function SheetBuilderForm({ initialVersions, createdId, createdStoragePat
                             alt=""
                             fill
                             className="object-contain"
+                            style={{ transform: "scaleX(-1)" }}
                           />
                         </div>
                       ) : null}
@@ -554,6 +556,7 @@ export function SheetBuilderForm({ initialVersions, createdId, createdStoragePat
                           alt=""
                           fill
                           className="object-contain"
+                          style={{ transform: "scaleX(-1)" }}
                         />
                       </div>
                       <button
