@@ -6,9 +6,16 @@ export async function adminLogoutAction() { await clearAdminSession(); redirect(
 export async function resetDevelopmentDataAction(formData: FormData) { if (process.env.NODE_ENV !== "development") throw new Error("DEVELOPMENT_ONLY"); const { requireAdmin } = await import("@/lib/admin-session"); await requireAdmin(); if (String(formData.get("resetDevelopmentConfirmation")) !== "RESET") throw new Error("RESET_CONFIRMATION_REQUIRED"); const { prisma } = await import("@/lib/db/prisma"); await prisma.$transaction(async (tx) => { await tx.stockMovement.deleteMany(); await tx.payment.deleteMany(); await tx.orderFile.deleteMany(); await tx.orderItem.deleteMany(); await tx.order.deleteMany(); await tx.artworkVersion.deleteMany(); await tx.artworkProject.deleteMany(); }); redirect("/orders?reset=success"); }
 import { saveOrderStorageSettings, runOrderStorageCleanup } from "@/lib/order-storage";
 import { requireAdmin } from "@/lib/admin-session";
-import { mkdir, writeFile, unlink } from "node:fs/promises";
+import { mkdir, writeFile, unlink, rm } from "node:fs/promises";
 import path from "node:path";
-import { exec } from "node:child_process";
+import { spawn } from "node:child_process";
+import {
+  getBackupData,
+  saveBackupData,
+  createBackup,
+  restoreBackup,
+  calculateNextScheduledDate,
+} from "@/lib/backup-restore";
 
 export async function saveStorageSettingsAction(formData: FormData) {
   await requireAdmin();
@@ -60,11 +67,11 @@ export async function openConfiguredFolderAction(formData: FormData) {
     redirect("/settings?openResult=invalid");
   }
 
-  // Windows Explorer launch via cmd/exec (Local mode restriction)
+  // Windows Explorer launch via argv (never interpolate a user path into a shell command).
   if (process.platform === "win32") {
-    exec(`explorer "${folder}"`, (err) => {
-      if (err) console.error("Failed to open Explorer path", err);
-    });
+    const explorer = spawn("explorer.exe", [folder], { detached: true, windowsHide: true, stdio: "ignore" });
+    explorer.on("error", (error) => console.error("Failed to open Explorer path", error));
+    explorer.unref();
   }
 
   redirect(`/settings?openResult=success&type=${type}`);
@@ -79,4 +86,102 @@ export async function runStorageCleanupAction(formData: FormData) {
   const params = new URLSearchParams({ storage: "cleaned", checked: String(result.ordersChecked), eligible: String(result.eligibleOrders), folders: String(result.foldersDeleted), files: String(result.filesDeleted), skipped: String(result.skippedOrders), errors: String(result.errors) });
   if (result.skippedReasons.length) params.set("reason", result.skippedReasons.slice(0, 3).join(" | "));
   redirect(`/settings?${params.toString()}`);
+}
+
+export async function saveBackupSettingsAction(formData: FormData) {
+  await requireAdmin();
+  const rawSchedule = String(formData.get("schedule") ?? "disabled");
+  const schedules = ["disabled", "daily", "weekly", "monthly"] as const;
+  if (!schedules.includes(rawSchedule as (typeof schedules)[number])) {
+    redirect("/settings?backupSettings=invalid");
+  }
+  const schedule = rawSchedule as (typeof schedules)[number];
+  const keepMinCount = Number(formData.get("keepMinCount") ?? 5);
+  if (!Number.isInteger(keepMinCount) || keepMinCount < 1 || keepMinCount > 50) {
+    redirect("/settings?backupSettings=invalid");
+  }
+
+  const { settings, history } = await getBackupData();
+  settings.schedule = schedule;
+  settings.keepMinCount = keepMinCount;
+  if (schedule !== "disabled") {
+    settings.nextScheduledAt = calculateNextScheduledDate(schedule, new Date())?.toISOString();
+  } else {
+    settings.nextScheduledAt = undefined;
+  }
+
+  await saveBackupData(settings, history);
+  redirect("/settings?backupSettings=saved");
+}
+
+export async function createManualBackupAction() {
+  await requireAdmin();
+  try {
+    await createBackup("manual");
+    redirect("/settings?backup=created");
+  } catch (err) {
+    redirect(`/settings?backup=failed&error=${encodeURIComponent(err instanceof Error ? err.message : "Backup failed")}`);
+  }
+}
+
+export async function togglePinBackupAction(id: string) {
+  await requireAdmin();
+  const { settings, history } = await getBackupData();
+  const backup = history.find((b) => b.id === id);
+  if (backup) {
+    backup.isPinned = !backup.isPinned;
+    await saveBackupData(settings, history);
+  }
+  redirect("/settings?backup=pinned");
+}
+
+export async function deleteBackupAction(id: string) {
+  await requireAdmin();
+  const { settings, history } = await getBackupData();
+  const backup = history.find((b) => b.id === id);
+  if (backup) {
+    await rm(backup.filePath, { force: true });
+  }
+  const newHistory = history.filter((b) => b.id !== id);
+  await saveBackupData(settings, newHistory);
+  redirect("/settings?backup=deleted");
+}
+
+export async function restoreFromHistoryAction(id: string, remapOrders?: string, remapSheets?: string) {
+  await requireAdmin();
+  const { history } = await getBackupData();
+  const backup = history.find((b) => b.id === id);
+  if (!backup) {
+    redirect("/settings?restore=notfound");
+  }
+  const res = await restoreBackup(backup.filePath, {
+    remapOrdersFolder: remapOrders || undefined,
+    remapSheetsFolder: remapSheets || undefined,
+  });
+  if (res.success) {
+    redirect("/settings?restore=success");
+  } else {
+    redirect(`/settings?restore=failed&error=${encodeURIComponent(res.error || "Restore failed")}`);
+  }
+}
+
+export async function restoreFromPathAction(formData: FormData) {
+  await requireAdmin();
+  const archivePath = String(formData.get("archivePath") ?? "").trim();
+  const remapOrders = String(formData.get("remapOrdersFolder") ?? "").trim();
+  const remapSheets = String(formData.get("remapSheetsFolder") ?? "").trim();
+
+  if (!archivePath) {
+    redirect("/settings?restore=invalidpath");
+  }
+
+  const res = await restoreBackup(archivePath, {
+    remapOrdersFolder: remapOrders || undefined,
+    remapSheetsFolder: remapSheets || undefined,
+  });
+  if (res.success) {
+    redirect("/settings?restore=success");
+  } else {
+    redirect(`/settings?restore=failed&error=${encodeURIComponent(res.error || "Restore failed")}`);
+  }
 }
