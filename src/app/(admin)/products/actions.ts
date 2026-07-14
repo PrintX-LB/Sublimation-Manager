@@ -37,7 +37,7 @@ function productError(error: unknown): FormState {
     error instanceof Prisma.PrismaClientKnownRequestError &&
     error.code === "P2002"
   )
-    return { message: "A product variant already uses that SKU." };
+    return { message: "A product variant conflicts with an existing record." };
   if (error instanceof Error && error.message === "INVALID_RELATION")
     return {
       message:

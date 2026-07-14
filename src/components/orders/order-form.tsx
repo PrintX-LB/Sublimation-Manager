@@ -32,7 +32,6 @@ type Customer = {
 
 type Variant = {
   id: string;
-  sku: string;
   name: string;
   sellingPrice: number;
   productionCost: number;
@@ -346,7 +345,7 @@ export function OrderForm({
                             <optgroup key={cat} label={cat}>
                               {list.map((v) => (
                                 <option key={v.id} value={v.id}>
-                                  {v.product.name} · {v.name} · {v.sku} ({formatUSD(v.sellingPrice)})
+                                  {v.product.name} · {v.name} ({formatUSD(v.sellingPrice)})
                                 </option>
                               ))}
                             </optgroup>

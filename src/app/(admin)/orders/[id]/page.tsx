@@ -251,7 +251,7 @@ export default async function OrderDetailPage({
                             {item.productNameSnapshot}
                           </h3>
                           <p className="text-sm text-slate-400">
-                            {item.description} · SKU {item.skuSnapshot}
+                            {item.description}
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
                             {item.quantity} ×{" "}

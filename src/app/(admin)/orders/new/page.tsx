@@ -41,7 +41,6 @@ export default async function NewOrderPage({
       where: { isActive: true, product: { isActive: true } },
       select: {
         id: true,
-        sku: true,
         name: true,
         sellingPrice: true,
         productionCost: true,
@@ -52,7 +51,7 @@ export default async function NewOrderPage({
           },
         },
       },
-      orderBy: { sku: "asc" },
+      orderBy: [{ product: { name: "asc" } }, { name: "asc" }],
     }),
   ]);
 
@@ -85,7 +84,6 @@ export default async function NewOrderPage({
 
   const variants = rawVariants.map((v) => ({
     id: v.id,
-    sku: v.sku,
     name: v.name,
     sellingPrice: Number(v.sellingPrice),
     productionCost: Number(v.productionCost),

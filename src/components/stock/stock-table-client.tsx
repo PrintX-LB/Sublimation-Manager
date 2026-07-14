@@ -17,7 +17,6 @@ import { formatUSD } from "@/lib/money";
 
 interface SerializedVariant {
   id: string;
-  sku: string;
   name: string;
   productName: string;
   categoryId: string | null;
@@ -63,7 +62,7 @@ export function StockTableClient({
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [lowStockFilter, setLowStockFilter] = useState(false);
   const [outOfStockFilter, setOutOfStockFilter] = useState(false);
-  const [sortBy, setSortBy] = useState("sku-asc");
+  const [sortBy, setSortBy] = useState("product-name");
 
   // Modal States
   const [adjustingVariant, setAdjustingVariant] = useState<SerializedVariant | null>(null);
@@ -149,8 +148,7 @@ export function StockTableClient({
       result = result.filter(
         (v) =>
           v.productName.toLowerCase().includes(q) ||
-          v.name.toLowerCase().includes(q) ||
-          v.sku.toLowerCase().includes(q)
+          v.name.toLowerCase().includes(q)
       );
     }
 
@@ -172,10 +170,6 @@ export function StockTableClient({
     // Sort
     result.sort((a, b) => {
       switch (sortBy) {
-        case "sku-asc":
-          return a.sku.localeCompare(b.sku);
-        case "sku-desc":
-          return b.sku.localeCompare(a.sku);
         case "product-name":
           return `${a.productName} ${a.name}`.localeCompare(`${b.productName} ${b.name}`);
         case "stock-asc":
@@ -265,7 +259,7 @@ export function StockTableClient({
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Products</p>
             <p className="text-2xl font-bold text-slate-900 mt-1">{globalStats.totalProducts}</p>
-            <p className="text-xs text-slate-400 mt-1 font-medium">SKU variants monitored</p>
+            <p className="text-xs text-slate-400 mt-1 font-medium">Product variants monitored</p>
           </div>
           <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
             <Package size={20} />
@@ -316,7 +310,7 @@ export function StockTableClient({
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Search product or SKU..."
+              placeholder="Search product or variant..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 transition"
@@ -371,8 +365,6 @@ export function StockTableClient({
               onChange={(e) => setSortBy(e.target.value)}
               className="appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 transition"
             >
-              <option value="sku-asc">SKU A–Z</option>
-              <option value="sku-desc">SKU Z–A</option>
               <option value="product-name">Product Name A-Z</option>
               <option value="stock-asc">Current Stock (Low–High)</option>
               <option value="stock-desc">Current Stock (High–Low)</option>
@@ -406,7 +398,6 @@ export function StockTableClient({
           <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-500 tracking-wider border-b border-slate-100">
             <tr>
               <th className="px-5 py-3.5">Product</th>
-              <th className="px-4 py-3.5">SKU</th>
               <th className="px-4 py-3.5 text-right">Current Stock</th>
               <th className="px-4 py-3.5 text-right">Reserved Stock</th>
               <th className="px-4 py-3.5 text-right">Available Stock</th>
@@ -419,7 +410,7 @@ export function StockTableClient({
           <tbody className="divide-y divide-slate-100">
             {filteredAndSortedVariants.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-5 py-12 text-center text-slate-400 italic">
+                <td colSpan={8} className="px-5 py-12 text-center text-slate-400 italic">
                   No matching inventory items found.
                 </td>
               </tr>
@@ -433,11 +424,6 @@ export function StockTableClient({
                     <td className="px-5 py-3">
                       <div className="font-semibold text-slate-900">{v.productName}</div>
                       <div className="text-xs text-slate-500 mt-0.5">{v.name} • {v.categoryName}</div>
-                    </td>
-
-                    {/* SKU */}
-                    <td className="px-4 py-3 font-mono text-xs text-slate-600">
-                      {v.sku}
                     </td>
 
                     {/* Current Stock */}
@@ -554,7 +540,7 @@ export function StockTableClient({
               <div>
                 <p className="text-xs text-slate-400 uppercase font-semibold tracking-wider">Product Variant</p>
                 <p className="font-semibold text-slate-900 text-sm mt-1">{adjustingVariant.productName}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{adjustingVariant.name} • {adjustingVariant.sku}</p>
+                <p className="text-xs text-slate-500 mt-0.5">{adjustingVariant.name}</p>
               </div>
 
               <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex justify-between text-sm">
@@ -675,7 +661,7 @@ export function StockTableClient({
               <div>
                 <h3 className="font-bold text-slate-900 text-base">Stock Movement History</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {historyVariant.productName} ({historyVariant.name}) • {historyVariant.sku}
+                  {historyVariant.productName} ({historyVariant.name})
                 </p>
               </div>
               <button

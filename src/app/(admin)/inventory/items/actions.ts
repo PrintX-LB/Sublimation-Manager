@@ -10,7 +10,7 @@ function validChoice(valueToCheck: string, choices: readonly string[]) { return 
 export async function createInventoryItemAction(formData: FormData) {
   const inventoryType = value(formData, "inventoryType"); const baseUnit = value(formData, "baseUnit");
   if (!validChoice(inventoryType, INVENTORY_TYPES) || !validChoice(baseUnit, INVENTORY_UNITS)) throw new Error("Select a valid inventory type and unit.");
-  await createInventoryItem({ name: value(formData, "name"), inventoryType: inventoryType as (typeof INVENTORY_TYPES)[number], baseUnit: baseUnit as (typeof INVENTORY_UNITS)[number], openingQuantity: value(formData, "openingQuantity") || "0", minimumQuantity: value(formData, "minimumQuantity") || "0", unitCost: value(formData, "unitCost") || "0", sku: value(formData, "sku"), brand: value(formData, "brand"), supplier: value(formData, "supplier"), storageLocation: value(formData, "storageLocation"), notes: value(formData, "notes") });
+  await createInventoryItem({ name: value(formData, "name"), inventoryType: inventoryType as (typeof INVENTORY_TYPES)[number], baseUnit: baseUnit as (typeof INVENTORY_UNITS)[number], openingQuantity: value(formData, "openingQuantity") || "0", minimumQuantity: value(formData, "minimumQuantity") || "0", unitCost: value(formData, "unitCost") || "0", brand: value(formData, "brand"), supplier: value(formData, "supplier"), storageLocation: value(formData, "storageLocation"), notes: value(formData, "notes") });
   revalidatePath("/inventory/items"); revalidatePath("/inventory");
 }
 

@@ -56,7 +56,6 @@ export default async function DashboardPage() {
     },
     select: {
       id: true,
-      sku: true,
       name: true,
       stockQuantity: true,
       reorderLevel: true,
@@ -134,7 +133,7 @@ export default async function DashboardPage() {
       include: {
         productVariant: {
           select: {
-            sku: true,
+            name: true,
             product: { select: { name: true } },
           },
         },
@@ -184,7 +183,7 @@ export default async function DashboardPage() {
       id: `mov-${m.id}`,
       type: "stock",
       time: m.createdAt,
-      description: `Stock adjusted: ${Math.abs(change)} units ${action} for ${m.productVariant.product.name} (${m.productVariant.sku})`,
+      description: `Stock adjusted: ${Math.abs(change)} units ${action} for ${m.productVariant.product.name} (${m.productVariant.name})`,
     });
   });
 
@@ -510,7 +509,6 @@ export default async function DashboardPage() {
                 <thead className="bg-slate-900/50 font-bold uppercase text-slate-500 text-[10px] tracking-wider border-b border-slate-800/80">
                   <tr>
                     <th className="px-5 py-3">Product Variant</th>
-                    <th className="px-4 py-3">SKU</th>
                     <th className="px-4 py-3 text-right">Current Stock</th>
                     <th className="px-5 py-3 text-right">Min Threshold</th>
                   </tr>
@@ -522,7 +520,6 @@ export default async function DashboardPage() {
                         <div className="font-semibold text-slate-100">{item.product.name}</div>
                         <div className="text-[10px] text-slate-500 mt-0.5">{item.name}</div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-[10px] text-slate-400">{item.sku}</td>
                       <td className={`px-4 py-3 text-right font-bold ${Number(item.stockQuantity) <= 0 ? "text-red-500" : "text-amber-500"}`}>
                         {item.stockQuantity.toString()}
                       </td>

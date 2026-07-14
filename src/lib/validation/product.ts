@@ -19,12 +19,6 @@ const optionalVariantText = z.preprocess(
 
 export const productVariantSchema = z.object({
   id: optionalId,
-  sku: z
-    .string()
-    .trim()
-    .min(1, "SKU is required")
-    .max(60)
-    .transform((value) => value.toUpperCase()),
   name: z.string().trim().min(1, "Variant name is required").max(100),
   optionName: optionalVariantText,
   optionValue: optionalVariantText,
@@ -56,22 +50,7 @@ export const productSchema = z
       .transform((value) => value || undefined),
     categoryId: z.string().uuid("Choose a category"),
     printTemplateId: optionalId,
-    variants: z
-      .array(productVariantSchema)
-      .min(1, "Add at least one SKU")
-      .max(50),
-  })
-  .superRefine((data, context) => {
-    const skus = new Set<string>();
-    data.variants.forEach((variant, index) => {
-      if (skus.has(variant.sku))
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["variants", index, "sku"],
-          message: "SKUs must be unique",
-        });
-      skus.add(variant.sku);
-    });
+    variants: z.array(productVariantSchema).min(1, "Add at least one variant").max(50),
   });
 
 export const categorySchema = z.object({

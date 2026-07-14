@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
 import type { ProductInput } from "@/lib/validation/product";
@@ -24,7 +25,6 @@ export async function listProducts({
       ? {
           OR: [
             { name: { contains: search } },
-            { variants: { some: { sku: { contains: search } } } },
             { category: { name: { contains: search } } },
           ],
         }
@@ -100,7 +100,6 @@ export function listCategories() {
 
 function variantData(variant: ProductInput["variants"][number]) {
   return {
-    sku: variant.sku,
     name: variant.name,
     optionName: variant.optionName,
     optionValue: variant.optionValue,
@@ -134,7 +133,12 @@ export async function createProduct(input: ProductInput) {
         description: input.description,
         categoryId: category.id,
         printTemplateId: template?.id,
-        variants: { create: input.variants.map(variantData) },
+        variants: {
+          create: input.variants.map((variant) => ({
+            ...variantData(variant),
+            sku: `INTERNAL-${randomUUID()}`,
+          })),
+        },
       },
     });
   });
@@ -181,7 +185,11 @@ export async function updateProduct(id: string, input: ProductInput) {
         });
       else
         await tx.productVariant.create({
-          data: { ...variantData(variant), productId: id },
+          data: {
+            ...variantData(variant),
+            sku: `INTERNAL-${randomUUID()}`,
+            productId: id,
+          },
         });
     }
     return tx.product.update({

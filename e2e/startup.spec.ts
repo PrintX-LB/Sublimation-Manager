@@ -55,7 +55,6 @@ test("creates and edits a product with a variant", async ({
   const categoryPicker = page.getByPlaceholder("Search categories...");
   await categoryPicker.fill(category);
   await page.getByRole("option", { name: category }).click();
-  await page.getByLabel("SKU").fill(`MUG-${suffix}`);
   await page.getByLabel("Selling price").fill("15.00");
   await page.getByLabel("Production cost").fill("5.00");
   await page.getByLabel("Current stock").fill("2");

@@ -6,7 +6,6 @@ const product = {
   categoryId: "10000000-0000-4000-8000-000000000001",
   variants: [
     {
-      sku: "mug-11",
       name: "Standard",
       sellingPrice: "12.50",
       productionCost: "3.25",
@@ -18,15 +17,15 @@ const product = {
 };
 
 describe("productSchema", () => {
-  it("normalises SKUs", () =>
-    expect(productSchema.parse(product).variants[0]?.sku).toBe("MUG-11"));
-  it("rejects duplicate SKUs", () =>
+  it("accepts variants without a user-facing stock code", () =>
+    expect(productSchema.parse(product).variants[0]?.name).toBe("Standard"));
+  it("accepts multiple variants with distinct names", () =>
     expect(
       productSchema.safeParse({
         ...product,
-        variants: [product.variants[0], { ...product.variants[0] }],
+        variants: [product.variants[0], { ...product.variants[0], name: "Large" }],
       }).success,
-    ).toBe(false));
+    ).toBe(true));
   it("rejects imprecise prices", () =>
     expect(
       productSchema.safeParse({

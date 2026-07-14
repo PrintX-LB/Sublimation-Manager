@@ -7,7 +7,6 @@ import { CategoryPicker } from "./category-picker";
 
 type VariantDraft = {
   id: string;
-  sku: string;
   name: string;
   optionName: string | null;
   optionValue: string | null;
@@ -19,7 +18,6 @@ type VariantDraft = {
 };
 const blankVariant = (): VariantDraft => ({
   id: "",
-  sku: "",
   name: "Standard",
   optionName: null,
   optionValue: null,
@@ -142,7 +140,6 @@ export function ProductForm({
             >
               <legend className="sr-only">Variant {index + 1}</legend>
               {[
-                ["sku", "SKU"],
                 ["name", "Name"],
                 ["optionName", "Option type (e.g. Size)"],
                 ["optionValue", "Option value (e.g. Large)"],
@@ -161,7 +158,6 @@ export function ProductForm({
                     {label}
                     <input
                       required={[
-                        "sku",
                         "name",
                         "sellingPrice",
                         "productionCost",

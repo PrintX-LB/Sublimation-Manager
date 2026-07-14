@@ -57,12 +57,11 @@ export async function stockOptions() {
     where: { isActive: true, product: { isActive: true } },
     select: {
       id: true,
-      sku: true,
       name: true,
       stockQuantity: true,
       reorderLevel: true,
       product: { select: { name: true } },
     },
-    orderBy: { sku: "asc" },
+    orderBy: [{ product: { name: "asc" } }, { name: "asc" }],
   });
 }

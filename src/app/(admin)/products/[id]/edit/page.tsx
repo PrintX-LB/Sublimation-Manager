@@ -22,7 +22,6 @@ export default async function EditProductPage({
     printTemplateId: product.printTemplateId,
     variants: product.variants.map((variant) => ({
       id: variant.id,
-      sku: variant.sku,
       name: variant.name,
       optionName: variant.optionName,
       optionValue: variant.optionValue,

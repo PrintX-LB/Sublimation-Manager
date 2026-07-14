@@ -57,7 +57,6 @@ export default async function ProductDetailPage({
             <thead className="bg-slate-50 text-xs uppercase text-slate-400">
               <tr>
                 <th className="px-5 py-3">Variant</th>
-                <th>SKU</th>
                 <th>Price</th>
                 <th>Cost</th>
                 <th>Profit / margin</th>
@@ -77,7 +76,6 @@ export default async function ProductDetailPage({
                         ? `${variant.optionName}: ${variant.optionValue}`
                         : variant.name}
                     </td>
-                    <td className="font-mono text-xs">{variant.sku}</td>
                     <td>{formatUSD(Number(price))}</td>
                     <td>{formatUSD(Number(cost))}</td>
                     <td>
