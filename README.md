@@ -17,6 +17,15 @@ A local-first administration application for a single-user sublimation-printing 
 
 No external account or hosted database is required. Prisma does require a local `DATABASE_URL`.
 
+## Quick Start (Windows)
+
+1. Clone the repository.
+2. Run `npm install` once from the repository directory.
+3. Double-click `tools\Start PrintX.bat`.
+4. PrintX prepares the local database, starts the development server and opens <http://localhost:3000> automatically.
+
+The launcher determines the project directory from its own location, so it continues to work if the repository is moved or cloned into a different folder. It creates `.env` from `.env.example` only when `.env` does not already exist, prepares the default SQLite file and applies pending migrations without overwriting existing local configuration or data. Keep the launcher terminal open while using PrintX and press `Ctrl+C` there to stop the server.
+
 ## Setup
 
 From the repository directory:
