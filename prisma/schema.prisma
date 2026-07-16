@@ -1,0 +1,512 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id             String    @id @default(uuid())
+  customerNumber String    @unique
+  fullName       String
+  phone          String?
+  email          String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  postcode       String?
+  country        String?
+  deliveryNotes  String?
+  internalNotes  String?
+  imagePath      String?
+  isArchived     Boolean   @default(false)
+  archivedAt     DateTime?
+  orders         Order[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([fullName])
+  @@index([email])
+  @@index([phone])
+  @@index([isArchived])
+}
+
+model ProductCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  isArchived  Boolean   @default(false)
+  archivedAt  DateTime?
+  products    Product[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model PrintTemplate {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  widthMm   Decimal
+  heightMm  Decimal
+  dpi       Int      @default(300)
+  safeAreaMm Decimal  @default(0)
+  bleedMm   Decimal  @default(0)
+  filePath  String?
+  notes     String?
+  products  Product[]
+  artworkProjects ArtworkProject[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Product {
+  id              String           @id @default(uuid())
+  categoryId      String?
+  printTemplateId String?
+  name            String
+  description     String?
+  isActive        Boolean          @default(true)
+  archivedAt      DateTime?
+  category        ProductCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  printTemplate   PrintTemplate?   @relation(fields: [printTemplateId], references: [id], onDelete: SetNull)
+  variants        ProductVariant[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([categoryId])
+  @@index([printTemplateId])
+  @@index([name])
+  @@index([isActive])
+}
+
+model ProductVariant {
+  id             String          @id @default(uuid())
+  productId      String
+  sku            String          @unique
+  name           String
+  optionName     String?
+  optionValue    String?
+  sellingPrice   Decimal
+  productionCost Decimal         @default(0)
+  stockQuantity  Decimal         @default(0)
+  reorderLevel   Decimal         @default(0)
+  stockPerUnit   Decimal         @default(1)
+  isActive       Boolean         @default(true)
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  orderItems     OrderItem[]
+  stockMovements StockMovement[]
+  inventoryItem  InventoryItem?
+  productionRecipe ProductionRecipe?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([productId])
+}
+
+model InventoryItem {
+  id                String   @id @default(uuid())
+  name              String
+  inventoryType     String
+  baseUnit          String
+  currentQuantity   Decimal  @default(0)
+  minimumQuantity   Decimal  @default(0)
+  unitCost          Decimal  @default(0)
+  sku               String?  @unique
+  brand             String?
+  supplier          String?
+  storageLocation   String?
+  notes             String?
+  isActive          Boolean  @default(true)
+  productVariantId  String?  @unique
+  productVariant    ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
+  transactions      InventoryTransaction[]
+  recipeItems       ProductionRecipeItem[]
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([inventoryType, isActive])
+  @@index([name])
+}
+
+model InventoryTransaction {
+  id                    String   @id @default(uuid())
+  inventoryItemId       String
+  quantityChange        Decimal
+  quantityBefore        Decimal
+  quantityAfter         Decimal
+  unit                  String
+  transactionType       String
+  reason                String
+  unitCost              Decimal?
+  totalCost             Decimal?
+  supplier              String?
+  orderId               String?
+  orderItemId           String?
+  productionIncidentId  String?
+  productionAttemptId   String?
+  idempotencyKey        String?  @unique
+  note                  String?
+  correctsTransactionId String?
+  productionMaterialConsumptionId String? @unique
+  createdAt             DateTime @default(now())
+  inventoryItem         InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  order                 Order? @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem             OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  productionIncident    ProductionIncident? @relation(fields: [productionIncidentId], references: [id], onDelete: Restrict)
+  productionAttempt     ProductionAttempt? @relation(fields: [productionAttemptId], references: [id], onDelete: Restrict)
+  productionMaterialConsumption ProductionMaterialConsumption? @relation("ConsumptionTransaction", fields: [productionMaterialConsumptionId], references: [id], onDelete: Restrict)
+  correctsTransaction InventoryTransaction? @relation("TransactionCorrection", fields: [correctsTransactionId], references: [id], onDelete: Restrict)
+  corrections InventoryTransaction[] @relation("TransactionCorrection")
+
+  @@index([inventoryItemId, createdAt])
+  @@index([transactionType, createdAt])
+  @@index([orderId])
+}
+
+model ProductionRecipe {
+  id              String   @id @default(uuid())
+  productVariantId String  @unique
+  name            String
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  productVariant  ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Cascade)
+  items           ProductionRecipeItem[]
+}
+
+model ProductionRecipeItem {
+  id             String   @id @default(uuid())
+  recipeId       String
+  inventoryItemId String
+  quantity       Decimal
+  unit           String
+  materialRole   String
+  consumptionStage String
+  required       Boolean  @default(true)
+  active         Boolean  @default(true)
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  recipe         ProductionRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  inventoryItem  InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  consumptions   ProductionMaterialConsumption[]
+  @@unique([recipeId, inventoryItemId, consumptionStage])
+  @@index([inventoryItemId])
+}
+
+model ProductionMaterialConsumption {
+  id             String   @id @default(uuid())
+  recipeItemId   String
+  orderId        String?
+  orderItemId    String?
+  productionAttemptId String?
+  productionIncidentId String?
+  printSheetId   String?
+  consumptionStage String
+  status         String   @default("Consumed")
+  materialNameSnapshot String
+  materialRoleSnapshot String
+  quantity       Decimal
+  unit           String
+  unitCost       Decimal
+  idempotencyKey String   @unique
+  createdAt      DateTime @default(now())
+  recipeItem     ProductionRecipeItem @relation(fields: [recipeItemId], references: [id], onDelete: Restrict)
+  inventoryTransaction InventoryTransaction? @relation("ConsumptionTransaction")
+  order          Order? @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem      OrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  productionAttempt ProductionAttempt? @relation(fields: [productionAttemptId], references: [id], onDelete: Restrict)
+  productionIncident ProductionIncident? @relation(fields: [productionIncidentId], references: [id], onDelete: Restrict)
+  printSheet     PrintSheet? @relation(fields: [printSheetId], references: [id], onDelete: Restrict)
+  @@unique([recipeItemId, productionAttemptId, consumptionStage])
+  @@index([orderId, orderItemId])
+  @@index([productionIncidentId])
+}
+
+model Sequence {
+  key   String @id
+  value Int    @default(0)
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  orderNumber String      @unique
+  customerId  String
+  status      String      @default("draft")
+  dueDate     DateTime?
+  deliveryMethod String?
+  subtotal    Decimal     @default(0)
+  discountType String     @default("fixed")
+  discountValue Decimal   @default(0)
+  deliveryCharge Decimal  @default(0)
+  tax         Decimal     @default(0)
+  total       Decimal     @default(0)
+  customerNotes String?
+  internalNotes String?
+  isTestOrder Boolean @default(false)
+  priority String @default("Normal")
+  stockCommitted Boolean  @default(false)
+  stockCommittedAt DateTime?
+  customer    Customer    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items       OrderItem[]
+  payments    Payment[]
+  stockMovements StockMovement[]
+  files       OrderFile[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  completedAt DateTime?
+  deliveredAt DateTime?
+  cancelledAt DateTime?
+  finalStatusAt DateTime?
+  actualProductionCost Decimal @default(0)
+  filesDeletedAt DateTime?
+  retainFilesPermanently Boolean @default(false)
+  retentionExtendedUntil DateTime?
+  printSheets PrintSheetSlot[]
+  inventoryTransactions InventoryTransaction[]
+  materialConsumptions ProductionMaterialConsumption[]
+
+  @@index([customerId])
+  @@index([status, dueDate])
+}
+
+model AdminAuditLog {
+  id          String   @id @default(uuid())
+  action      String
+  orderNumber String?
+  success     Boolean
+  reason      String?
+  createdAt   DateTime @default(now())
+  @@index([createdAt])
+  @@index([action, success])
+}
+
+model OrderItem {
+  id                   String          @id @default(uuid())
+  orderId              String
+  productVariantId     String?
+  description          String
+  productNameSnapshot  String
+  skuSnapshot          String
+  productionCostSnapshot Decimal
+  quantity             Int
+  unitPrice            Decimal
+  lineDiscountType     String      @default("fixed")
+  lineDiscountValue    Decimal     @default(0)
+  lineTotal            Decimal
+  customerArtworkPath  String?
+  printReadyArtworkPath String?
+  artworkProject       ArtworkProject?
+  order                Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productVariant       ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
+  stockMovements       StockMovement[]
+  productionAttempts   ProductionAttempt[]
+  printSheetSlots       PrintSheetSlot[]
+  productionIncidents  ProductionIncident[]
+  inventoryTransactions InventoryTransaction[]
+  materialConsumptions ProductionMaterialConsumption[]
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  @@index([orderId])
+  @@index([productVariantId])
+}
+
+model ArtworkProject {
+  id             String          @id @default(uuid())
+  orderItemId    String          @unique
+  originalPath   String
+  templateId     String?
+  positionX      Decimal         @default(0)
+  positionY      Decimal         @default(0)
+  zoom           Decimal         @default(1)
+  rotation       Decimal         @default(0)
+  settingsJson   String          @default("{}")
+  activeVersionId String?
+  orderItem      OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  template       PrintTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  versions       ArtworkVersion[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model ArtworkVersion {
+  id          String         @id @default(uuid())
+  projectId   String
+  version     Int
+  editedPath  String
+  printReadyPath String
+  widthPx     Int
+  heightPx    Int
+  project     ArtworkProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+  printSheetSlots PrintSheetSlot[]
+  @@unique([projectId, version])
+  @@index([projectId, createdAt])
+}
+
+model PrintSheet {
+  id          String   @id @default(uuid())
+  sheetNumber String?  @unique
+  filename    String
+  storagePath String
+  widthPx     Int
+  heightPx    Int
+  dpi         Int
+  status      String   @default("READY_TO_PRINT")
+  updatedAt   DateTime @default(now()) @updatedAt
+  printedAt   DateTime?
+  cancelledAt DateTime?
+  sourceSheetId String?
+  regenerationRequestKey String? @unique
+  regenerationNumber Int @default(0)
+  notes       String?
+  createdAt   DateTime @default(now())
+  slots       PrintSheetSlot[]
+  materialConsumptions ProductionMaterialConsumption[]
+  sourceSheet PrintSheet? @relation("SheetRegenerations", fields: [sourceSheetId], references: [id], onDelete: Restrict)
+  regenerations PrintSheet[] @relation("SheetRegenerations")
+  events      PrintSheetEvent[]
+  @@index([createdAt])
+  @@index([status, createdAt])
+}
+
+model PrintSheetSlot {
+  id              String         @id @default(uuid())
+  sheetId         String
+  slotNumber      Int
+  artworkVersionId String
+  orderId         String
+  orderItemId     String?
+  productionAttemptId String?
+  assignmentState String   @default("ACTIVE")
+  assignedAt      DateTime @default(now())
+  releasedAt      DateTime?
+  releaseReason   String?
+  supersedingSheetId String?
+  sheet           PrintSheet     @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  artworkVersion  ArtworkVersion @relation(fields: [artworkVersionId], references: [id], onDelete: Restrict)
+  order           Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem       OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  productionAttempt ProductionAttempt? @relation(fields: [productionAttemptId], references: [id], onDelete: Restrict)
+  @@unique([sheetId, slotNumber])
+  @@index([artworkVersionId])
+  @@index([orderId])
+}
+
+model PrintSheetEvent {
+  id            String   @id @default(uuid())
+  sheetId       String
+  eventType     String
+  note          String?
+  relatedSheetId String?
+  createdAt     DateTime @default(now())
+  sheet         PrintSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  @@index([sheetId, createdAt])
+}
+
+model Payment {
+  id        String   @id @default(uuid())
+  orderId   String
+  amount    Decimal
+  method    String
+  status    String   @default("completed")
+  reference String?
+  paidAt    DateTime?
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+}
+
+model StockMovement {
+  id               String         @id @default(uuid())
+  productVariantId String
+  orderItemId      String?
+  movementType     String
+  orderId          String?
+  quantityChange   Decimal
+  stockBefore      Decimal
+  stockAfter       Decimal
+  reason           String
+  note             String?
+  productionIncidentId String? @unique
+  productionAttemptId String? @unique
+  productVariant   ProductVariant @relation(fields: [productVariantId], references: [id], onDelete: Restrict)
+  orderItem        OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  order            Order?         @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  productionIncident ProductionIncident? @relation(fields: [productionIncidentId], references: [id], onDelete: Restrict)
+  productionAttempt ProductionAttempt? @relation(fields: [productionAttemptId], references: [id], onDelete: Restrict)
+  createdAt        DateTime       @default(now())
+
+  @@index([productVariantId])
+  @@index([orderItemId])
+  @@index([orderId])
+}
+
+model ProductionAttempt {
+  id            String   @id @default(uuid())
+  orderItemId   String
+  attemptNumber Int
+  status        String   @default("Pending")
+  blankConsumed Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  orderItem     OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  failedIncident ProductionIncident? @relation("FailedAttempt")
+  replacementIncident ProductionIncident? @relation("ReplacementAttempt")
+  stockMovement   StockMovement?
+  inventoryTransactions InventoryTransaction[]
+  materialConsumptions ProductionMaterialConsumption[]
+  printSheetSlots PrintSheetSlot[]
+
+  @@unique([orderItemId, attemptNumber])
+  @@index([status])
+  @@index([orderItemId, createdAt])
+}
+
+model ProductionIncident {
+  id                    String   @id @default(uuid())
+  orderItemId           String
+  idempotencyKey        String   @unique
+  reason                String
+  note                  String?
+  blankProductDamaged   Boolean  @default(false)
+  otherMaterialWasted   String?
+  additionalMaterialCost Decimal @default(0)
+  failedAttemptId       String? @unique
+  replacementAttemptId  String? @unique
+  createdAt             DateTime @default(now())
+  orderItem             OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  failedAttempt         ProductionAttempt? @relation("FailedAttempt", fields: [failedAttemptId], references: [id], onDelete: Restrict)
+  replacementAttempt    ProductionAttempt? @relation("ReplacementAttempt", fields: [replacementAttemptId], references: [id], onDelete: Restrict)
+  stockMovement         StockMovement?
+  inventoryTransactions InventoryTransaction[]
+  materialConsumptions ProductionMaterialConsumption[]
+
+  @@index([orderItemId, createdAt])
+}
+
+model OrderFile {
+  id               String   @id @default(uuid())
+  orderId          String
+  originalFilename String
+  storagePath      String
+  mimeType         String
+  sizeBytes        Int
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  deletedAt        DateTime?
+
+  @@index([orderId])
+}
+
+model AppSetting {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}

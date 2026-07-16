@@ -1,0 +1,22 @@
+# PrintX Coding Guidelines
+
+- Preserve the existing Next.js, TypeScript, Prisma, SQLite and local-storage architecture.
+- Do not modify the frozen Artwork Editor except to fix a confirmed bug.
+- Reuse existing services and server-side validation.
+- Never duplicate stock, payment or status-transition logic.
+- All stock mutations must use the central inventory service; never update inventory quantities directly.
+- Every stock change must create an immutable transaction, with Decimal-safe quantities and costs.
+- Automatic recipe consumption must be staged, idempotent and atomic; never infer blank loss from a reprint.
+- Treat generated print sheets as durable records: preview/download is read-only, printed/cancelled transitions are audited, and physical regeneration must use the central recipe-consumption service.
+- Draft pairings never consume inventory; compatibility is validated server-side; a production attempt may be assigned to only one active sheet; queue ordering is deterministic and physical generation must be explicit.
+- Sheet assignments are historical records: only ACTIVE assignments block queue eligibility, release never restores inventory, printed sheets use incident/reprint workflows, and draft queue edits never mutate persistent state.
+- Production list and queue screens must select metadata/thumbnails only; load full-resolution artwork only for previews or generation.
+- Recipe changes must not rewrite historical material-consumption records.
+- Keep money calculations decimal-safe and use historical order snapshots.
+- Run TypeScript, ESLint, unit tests, relevant Playwright tests and the production build.
+- Clean-install verification must use the real Prisma schema and migrations with a newly created isolated SQLite file; on Windows, pre-create the empty target file before `prisma migrate deploy` to avoid the schema-engine missing-file failure.
+- Playwright and disposable verification workflows must use isolated SQLite, storage, sheet and backup paths and must disconnect Prisma before cleanup.
+- Never commit secrets, uploads, SQLite database files or `.env.local`.
+- Keep UI consistent with the PrintX dark theme and accessible controls.
+- Keep components focused and avoid premature abstraction.
+- Report the exact files modified and remaining limitations.
