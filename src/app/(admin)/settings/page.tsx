@@ -1,6 +1,7 @@
 import { PageHeading } from "@/components/admin/page-heading";
 import { CleanupButton } from "@/components/admin/cleanup-button";
 import { getAdminSession } from "@/lib/admin-session";
+import { getAdminCredentialStatus } from "@/lib/admin-credentials";
 import { getOrderStorageSettings } from "@/lib/order-storage";
 import { getBackupData } from "@/lib/backup-restore";
 import { StorageForm } from "./storage-form";
@@ -8,6 +9,7 @@ import { BackupForm } from "./backup-form";
 import {
   adminLoginAction,
   adminLogoutAction,
+  initializeAdminAction,
   runStorageCleanupAction,
 } from "./actions";
 import { ResetDevelopmentForm } from "./reset-development-form";
@@ -17,6 +19,7 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{
     admin?: string;
+    adminSetup?: string;
     storage?: string;
     checked?: string;
     eligible?: string;
@@ -35,6 +38,7 @@ export default async function SettingsPage({
   }>;
 }) {
   const unlocked = await getAdminSession();
+  const adminCredentials = await getAdminCredentialStatus();
   const params = await searchParams;
   const storage = await getOrderStorageSettings();
   const { settings: backupSettings, history: backupHistory } = await getBackupData();
@@ -90,6 +94,43 @@ export default async function SettingsPage({
                 <ResetDevelopmentForm />
               ) : null}
             </div>
+          ) : adminCredentials.configurationError ? (
+            <div className="mt-4 rounded-lg border border-red-500/30 bg-red-950/20 p-4 text-sm text-red-200">
+              Admin credentials are only partially configured. Repair the Admin credential configuration before continuing.
+            </div>
+          ) : !adminCredentials.configured ? (
+            <form action={initializeAdminAction} className="mt-4 space-y-4" autoComplete="off">
+              <div className="rounded-lg border border-sky-500/30 bg-sky-950/20 p-3 text-sm text-sky-100">
+                <p className="font-semibold">Create the PrintX administrator</p>
+                <p className="mt-1 text-xs text-sky-200/80">
+                  This is a one-time setup for this fresh installation. The password is stored only as a secure hash.
+                </p>
+              </div>
+              <label className="block text-sm font-medium text-slate-300">
+                Admin username
+                <input name="username" required minLength={3} maxLength={64} autoComplete="username" className="mt-1 w-full rounded-lg border border-slate-800 bg-[#0f172a] p-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500" />
+              </label>
+              <label className="block text-sm font-medium text-slate-300">
+                Password
+                <input name="password" type="password" required minLength={10} maxLength={128} autoComplete="new-password" className="mt-1 w-full rounded-lg border border-slate-800 bg-[#0f172a] p-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500" />
+              </label>
+              <label className="block text-sm font-medium text-slate-300">
+                Confirm password
+                <input name="confirmPassword" type="password" required minLength={10} maxLength={128} autoComplete="new-password" className="mt-1 w-full rounded-lg border border-slate-800 bg-[#0f172a] p-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500" />
+              </label>
+              {params.adminSetup && (
+                <p className="text-sm font-semibold text-red-400">
+                  {params.adminSetup === "password_mismatch" && "Passwords do not match."}
+                  {params.adminSetup === "weak_password" && "Use a password between 10 and 128 characters."}
+                  {params.adminSetup === "invalid_username" && "Use a username between 3 and 64 characters."}
+                  {params.adminSetup === "already_configured" && "Admin Mode has already been configured. Refresh and sign in."}
+                  {params.adminSetup === "configuration_error" && "Admin configuration is incomplete and could not be initialized."}
+                </p>
+              )}
+              <button className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 transition">
+                Create Administrator
+              </button>
+            </form>
           ) : (
             <form action={adminLoginAction} className="mt-4 space-y-4">
               <label className="block text-sm font-medium text-slate-300">

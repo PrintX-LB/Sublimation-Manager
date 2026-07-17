@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import path from "node:path";
 import { mkdir, writeFile, rm, access, readFile } from "node:fs/promises";
 import { saveOrderStorageSettings } from "./order-storage";
+import { prisma } from "./db/prisma";
+import { ADMIN_CREDENTIAL_SETTING_KEYS, initializeAdminCredentials, verifyAdminCredentials } from "./admin-credentials";
 import {
   createBackup,
   verifyBackupArchive,
@@ -129,5 +131,36 @@ describe("Backup & Restore System Tests", () => {
     expect(remainingFiles).toContain("b3.zip"); // most recent
     expect(remainingFiles).not.toContain("b1.zip"); // deleted
     expect(remainingFiles).not.toContain("b2.zip"); // deleted
+  });
+
+  it("restores database-backed Admin configuration from the backup snapshot", async () => {
+    const originalUsername = process.env.ADMIN_USERNAME;
+    const originalPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+    process.env.ADMIN_USERNAME = "";
+    process.env.ADMIN_PASSWORD_HASH = "";
+    try {
+      await prisma.appSetting.deleteMany({ where: { key: { in: [...ADMIN_CREDENTIAL_SETTING_KEYS] } } });
+      await initializeAdminCredentials({
+        username: "backup-owner",
+        password: "original-admin-password",
+        confirmPassword: "original-admin-password",
+      });
+      const backupEntry = await createBackup("manual");
+
+      await prisma.appSetting.update({ where: { key: "admin.username" }, data: { value: "changed-owner" } });
+      await expect(verifyAdminCredentials("backup-owner", "original-admin-password")).resolves.toBe(false);
+
+      const restored = await restoreBackup(backupEntry.filePath);
+      expect(restored).toEqual({ success: true });
+      await expect(verifyAdminCredentials("backup-owner", "original-admin-password")).resolves.toBe(true);
+      await expect(verifyAdminCredentials("changed-owner", "original-admin-password")).resolves.toBe(false);
+      await rm(backupEntry.filePath, { force: true });
+    } finally {
+      await prisma.appSetting.deleteMany({ where: { key: { in: [...ADMIN_CREDENTIAL_SETTING_KEYS] } } });
+      if (originalUsername === undefined) delete process.env.ADMIN_USERNAME;
+      else process.env.ADMIN_USERNAME = originalUsername;
+      if (originalPasswordHash === undefined) delete process.env.ADMIN_PASSWORD_HASH;
+      else process.env.ADMIN_PASSWORD_HASH = originalPasswordHash;
+    }
   });
 });

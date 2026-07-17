@@ -72,6 +72,26 @@ const backupRootPath = () => {
   return path.resolve(process.cwd(), "data", "backups");
 };
 
+export function activeDatabasePath(): string {
+  const explicitPath = process.env.PRINTX_DATABASE_PATH?.trim();
+  if (explicitPath) return path.resolve(explicitPath);
+
+  const databaseUrl = process.env.DATABASE_URL?.trim() ?? "";
+  if (!databaseUrl.startsWith("file:")) {
+    return path.resolve(process.cwd(), "data", "sublimation.db");
+  }
+  const rawPath = decodeURIComponent(databaseUrl.slice("file:".length).split("?")[0] ?? "");
+  const windowsPath = rawPath.match(/^\/?[A-Za-z]:[\\/]/) ? rawPath.replace(/^\//, "") : null;
+  if (windowsPath) return path.resolve(windowsPath);
+  if (path.isAbsolute(rawPath)) return path.resolve(rawPath);
+  // Prisma resolves a relative SQLite URL from the directory containing schema.prisma.
+  return path.resolve(process.cwd(), "prisma", rawPath);
+}
+
+const activeStorageSettingsPath = () => process.env.PRINTX_STORAGE_SETTINGS_PATH
+  ? path.resolve(process.env.PRINTX_STORAGE_SETTINGS_PATH)
+  : path.resolve(process.cwd(), "data", "order-storage-settings.json");
+
 // Helper: Checksum
 export function calculateChecksum(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
@@ -196,6 +216,14 @@ async function copyDirectory(src: string, dest: string) {
   }
 }
 
+async function removeSqliteSidecars(databasePath: string) {
+  await Promise.all([
+    rm(`${databasePath}-wal`, { force: true }),
+    rm(`${databasePath}-shm`, { force: true }),
+    rm(`${databasePath}-journal`, { force: true }),
+  ]);
+}
+
 // Helper: Get Schema Migrations
 async function getSchemaMigrations(): Promise<string[]> {
   const migrationsPath = path.resolve(process.cwd(), "prisma", "migrations");
@@ -239,7 +267,7 @@ export async function createBackup(type: "manual" | "scheduled"): Promise<Backup
 
   await mkdir(backupDir, { recursive: true });
 
-  const tempDbPath = path.resolve(process.cwd(), "data", `temp_backup_${backupId}.db`);
+  const tempDbPath = path.join(path.dirname(activeDatabasePath()), `temp_backup_${backupId}.db`);
 
   try {
     // 1. SQLite Consistency snapshot (VACUUM INTO)
@@ -437,8 +465,9 @@ export async function restoreBackup(
   archivePath: string,
   options?: { remapOrdersFolder?: string; remapSheetsFolder?: string }
 ): Promise<{ success: boolean; error?: string }> {
-  const stagingDir = path.resolve(process.cwd(), "data", "staging-restore");
-  const safetyDir = path.resolve(process.cwd(), "data", "safety-backup");
+  const databasePath = activeDatabasePath();
+  const stagingDir = path.join(path.dirname(databasePath), "staging-restore");
+  const safetyDir = path.join(path.dirname(databasePath), "safety-backup");
 
   try {
     const archive = path.resolve(archivePath);
@@ -508,13 +537,14 @@ export async function restoreBackup(
     await rm(safetyDir, { recursive: true, force: true });
     await mkdir(safetyDir, { recursive: true });
 
-    const activeDbPath = path.resolve(process.cwd(), "data", "sublimation.db");
-    const activeStorageSettingsPath = path.resolve(process.cwd(), "data", "order-storage-settings.json");
+    const activeDbPath = databasePath;
+    const storageSettingsPath = activeStorageSettingsPath();
 
-    // Copy DB and configuration
-    await copyFile(activeDbPath, path.join(safetyDir, "sublimation.db"));
+    // Create a SQLite-consistent rollback snapshot, including committed WAL data.
+    const safetyDatabasePath = path.join(safetyDir, "sublimation.db");
+    await prisma.$executeRawUnsafe(`VACUUM INTO '${safetyDatabasePath.replace(/'/g, "''")}'`);
     try {
-      await copyFile(activeStorageSettingsPath, path.join(safetyDir, "order-storage-settings.json"));
+      await copyFile(storageSettingsPath, path.join(safetyDir, "order-storage-settings.json"));
     } catch {}
 
     // Copy original files
@@ -540,6 +570,7 @@ export async function restoreBackup(
       await copyDirectory(stagedSheetsDir, targetSheetsFolder);
 
       // Copy database
+      await removeSqliteSidecars(activeDbPath);
       await copyFile(stagedDbPath, activeDbPath);
 
       // Save remapped settings
@@ -558,9 +589,10 @@ export async function restoreBackup(
       await copyDirectory(path.join(safetyDir, "orders"), targetOrdersFolder);
       await copyDirectory(path.join(safetyDir, "sheets"), targetSheetsFolder);
 
+      await removeSqliteSidecars(activeDbPath);
       await copyFile(path.join(safetyDir, "sublimation.db"), activeDbPath);
       try {
-        await copyFile(path.join(safetyDir, "order-storage-settings.json"), activeStorageSettingsPath);
+        await copyFile(path.join(safetyDir, "order-storage-settings.json"), storageSettingsPath);
       } catch {}
 
       throw err;

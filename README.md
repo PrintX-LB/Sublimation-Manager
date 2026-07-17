@@ -36,7 +36,7 @@ npm run desktop:pack
 npm run desktop:portable
 ```
 
-`desktop:portable` produces an unsigned x64 beta executable under `release/`. The first packaged launch creates an empty SQLite database, applies the checked-in Prisma migrations, and creates isolated storage, backup, log, configuration, and temporary directories. It never packages the repository database, artwork, generated sheets, backups, or `.env` files. See `DESKTOP.md` for the data layout and testing procedure.
+`desktop:portable` produces an unsigned x64 beta executable under `release/`. The first packaged launch creates an empty SQLite database, applies the checked-in Prisma migrations, and creates isolated storage, backup, log, configuration, and temporary directories. Settings then provides a one-time Admin username/password setup; only the password hash is stored. It never packages the repository database, artwork, generated sheets, backups, credentials, or `.env` files. See `DESKTOP.md` for the data layout and testing procedure.
 
 ## Setup
 

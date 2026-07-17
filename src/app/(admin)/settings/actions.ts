@@ -2,8 +2,19 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { clearAdminSession, getAdminSession, setAdminSession, verifyAdminCredentials } from "@/lib/admin-session";
+import { initializeAdminCredentials } from "@/lib/admin-credentials";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 export async function adminLoginAction(formData: FormData) { const ok = await verifyAdminCredentials(String(formData.get("username") ?? ""), String(formData.get("password") ?? "")); if (!ok) redirect("/settings?admin=invalid"); await setAdminSession(); redirect("/settings?admin=unlocked"); }
+export async function initializeAdminAction(formData: FormData) {
+  const result = await initializeAdminCredentials({
+    username: String(formData.get("username") ?? ""),
+    password: String(formData.get("password") ?? ""),
+    confirmPassword: String(formData.get("confirmPassword") ?? ""),
+  });
+  if (!result.ok) redirect(`/settings?adminSetup=${result.reason.toLowerCase()}`);
+  await setAdminSession();
+  redirect("/settings?admin=initialized");
+}
 export async function adminLogoutAction() { await clearAdminSession(); redirect("/settings?admin=locked"); }
 export type ResetDevelopmentResult = { ok: boolean; message: string; counts?: Record<string, number> };
 
@@ -224,7 +235,8 @@ export async function restoreFromHistoryAction(id: string, remapOrders?: string,
     remapSheetsFolder: remapSheets || undefined,
   });
   if (res.success) {
-    redirect("/settings?restore=success");
+    await clearAdminSession();
+    redirect("/settings?restore=success&admin=locked");
   } else {
     redirect(`/settings?restore=failed&error=${encodeURIComponent(res.error || "Restore failed")}`);
   }
@@ -245,7 +257,8 @@ export async function restoreFromPathAction(formData: FormData) {
     remapSheetsFolder: remapSheets || undefined,
   });
   if (res.success) {
-    redirect("/settings?restore=success");
+    await clearAdminSession();
+    redirect("/settings?restore=success&admin=locked");
   } else {
     redirect(`/settings?restore=failed&error=${encodeURIComponent(res.error || "Restore failed")}`);
   }

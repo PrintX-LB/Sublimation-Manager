@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { app, BrowserWindow, dialog, ipcMain, shell } = require("electron");
 const { spawn } = require("node:child_process");
+const { randomBytes } = require("node:crypto");
 const { appendFileSync, copyFileSync, existsSync, mkdirSync, openSync, closeSync, readFileSync, statSync, writeFileSync } = require("node:fs");
 const net = require("node:net");
 const path = require("node:path");
@@ -38,6 +39,7 @@ function resolveRuntimePaths() {
     tempDir: path.join(root, "temp"),
     storageSettingsFile: path.join(root, "config", "order-storage-settings.json"),
     backupSettingsFile: path.join(root, "config", "backup-settings-history.json"),
+    adminSessionSecretFile: path.join(root, "config", "admin-session-secret"),
     migrationMarkerFile: path.join(root, "config", "last-migrated-version.txt"),
     logFile: path.join(root, "logs", "printx-desktop.log"),
   };
@@ -73,16 +75,23 @@ function ensureRuntimeDirectories() {
   if (!existsSync(runtimePaths.storageSettingsFile)) {
     writeFileSync(runtimePaths.storageSettingsFile, JSON.stringify({ baseFolder: runtimePaths.ordersDir, printSheetFolder: runtimePaths.sheetsDir, retentionDays: 15 }, null, 2), "utf8");
   }
+  if (!existsSync(runtimePaths.adminSessionSecretFile)) {
+    writeFileSync(runtimePaths.adminSessionSecretFile, randomBytes(48).toString("base64url"), { encoding: "utf8", mode: 0o600 });
+  }
 }
 
 function desktopEnvironment() {
   return {
     ...process.env,
     DATABASE_URL: toPrismaFileUrl(runtimePaths.databaseFile),
+    PRINTX_DATABASE_PATH: runtimePaths.databaseFile,
     PRINTX_STORAGE_SETTINGS_PATH: runtimePaths.storageSettingsFile,
     PRINTX_BACKUP_SETTINGS_PATH: runtimePaths.backupSettingsFile,
     PRINTX_BACKUP_ROOT: runtimePaths.backupsDir,
     PRINTX_DESKTOP: "1",
+    ADMIN_USERNAME: "",
+    ADMIN_PASSWORD_HASH: "",
+    ADMIN_SESSION_SECRET: readFileSync(runtimePaths.adminSessionSecretFile, "utf8").trim(),
     NODE_ENV: isDevelopment ? "development" : "production",
   };
 }

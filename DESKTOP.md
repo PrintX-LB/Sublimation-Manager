@@ -40,6 +40,10 @@ For isolated testing, set `PRINTX_DESKTOP_USER_DATA` before launching the packag
 
 On first launch, Electron creates the runtime directories and an empty SQLite file, then runs `prisma migrate deploy` using the packaged schema and migration history. Before migrating a non-empty database to a new application version, it creates a database safety copy in `backups/`. Migration reset, `db push`, and development migrations are never run by the desktop application.
 
+The first visit to Settings on a fresh database shows a one-time Admin setup form. The owner chooses an Admin username and password; PrintX stores the username and a bcrypt password hash in `AppSetting`, never the plaintext password. Electron generates a separate random session-signing secret in `config/admin-session-secret`. Browser deployments can continue using `ADMIN_USERNAME`, `ADMIN_PASSWORD_HASH`, and `ADMIN_SESSION_SECRET` from their private environment.
+
+Because database-backed Admin credentials live in the SQLite database, normal PrintX backups include them. Restoring a backup restores its Admin username/password hash and locks the current Admin session so the restored credentials are required. Older backups without database-backed credentials return to the one-time setup state.
+
 The Electron main process starts the packaged standalone Next.js server on an available loopback port, waits for `/dashboard`, and then opens the application window. Closing the final window shuts down the local server.
 
 ## Security
@@ -57,10 +61,11 @@ Always use a disposable profile first:
 1. Set `PRINTX_DESKTOP_USER_DATA` to a new temporary folder.
 2. Launch the portable executable.
 3. Confirm the empty database migrates and Dashboard opens.
-4. Create disposable customer, order, inventory, and sheet data.
-5. Close and reopen PrintX; confirm persistence.
-6. Create and restore a disposable backup.
-7. Confirm no writable files appear beside the executable or under application resources.
-8. Remove the disposable folder only after PrintX is closed.
+4. Open Settings, create disposable Admin credentials, lock Admin Mode, and sign in again.
+5. Create disposable customer, order, inventory, and sheet data.
+6. Close and reopen PrintX; confirm persistence.
+7. Create and restore a disposable backup; confirm the backed-up Admin credentials are restored.
+8. Confirm no writable files appear beside the executable or under application resources.
+9. Remove the disposable folder only after PrintX is closed.
 
 Unsigned beta builds may trigger Windows SmartScreen. Do not bypass SmartScreen programmatically. Code signing and updates are future release work.

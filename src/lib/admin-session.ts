@@ -1,27 +1,10 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
-import { existsSync } from "node:fs";
-import path from "node:path";
-// bcryptjs currently ships without declarations in this project.
-// @ts-expect-error The runtime package exposes the compare API used below.
-import bcrypt from "bcryptjs";
+export { verifyAdminCredentials } from "@/lib/admin-credentials";
 const COOKIE = "printx_admin";
 function secret() { const value = process.env.ADMIN_SESSION_SECRET; if (!value) throw new Error("ADMIN_SESSION_SECRET is not configured"); return value; }
 function sign(value: string) { return createHmac("sha256", secret()).update(value).digest("base64url"); }
 export async function getAdminSession() { const value = (await cookies()).get(COOKIE)?.value; if (!value) return false; const [payload, signature] = value.split("."); if (!payload || !signature) return false; const expected = sign(payload); return expected.length === signature.length && timingSafeEqual(Buffer.from(expected), Buffer.from(signature)) && Number(payload) > Date.now(); }
 export async function requireAdmin() { if (!(await getAdminSession())) throw new Error("ADMIN_REQUIRED"); }
-export async function verifyAdminCredentials(username: string, password: string) {
-  const configuredUsername = process.env.ADMIN_USERNAME?.trim() ?? "";
-  const configuredHash = process.env.ADMIN_PASSWORD_HASH?.trim() ?? "";
-  const submittedUsername = username.trim();
-  const usernameMatches = submittedUsername === configuredUsername;
-  if (process.env.NODE_ENV === "development") {
-    console.info("[admin-login] configuration", { cwd: process.cwd(), envLocalExpected: existsSync(path.join(process.cwd(), ".env.local")), hasUsername: Boolean(configuredUsername), hasPasswordHash: Boolean(configuredHash), usernameMatches });
-  }
-  if (!usernameMatches || !configuredHash) return false;
-  const passwordMatches = await bcrypt.compare(password, configuredHash);
-  if (process.env.NODE_ENV === "development") console.info("[admin-login] bcrypt result", { passwordMatches });
-  return passwordMatches;
-}
 export async function setAdminSession() { const value = String(Date.now() + 30 * 60 * 1000); (await cookies()).set(COOKIE, `${value}.${sign(value)}`, { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", maxAge: 1800, path: "/" }); }
 export async function clearAdminSession() { (await cookies()).delete(COOKIE); }
