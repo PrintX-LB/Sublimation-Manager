@@ -32,6 +32,13 @@ interface BackupFormProps {
   activeSheetsFolder: string;
 }
 
+const formatDateTime = (value: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Europe/Madrid",
+  }).format(new Date(value));
+
 export function BackupForm({
   settings,
   history,
@@ -113,14 +120,16 @@ export function BackupForm({
               <div>
                 <span>Last run: </span>
                 <span className="font-mono text-slate-300">
-                  {settings.lastBackupAt ? new Date(settings.lastBackupAt).toLocaleString() : "Never"}
+                  {settings.lastBackupAt
+                    ? formatDateTime(settings.lastBackupAt)
+                    : "Never"}
                 </span>
               </div>
               {settings.nextScheduledAt && (
                 <div>
                   <span>Next scheduled: </span>
                   <span className="font-mono text-emerald-400">
-                    {new Date(settings.nextScheduledAt).toLocaleString()}
+                    {formatDateTime(settings.nextScheduledAt)}
                   </span>
                 </div>
               )}
@@ -247,7 +256,7 @@ export function BackupForm({
                 {history.map((backup) => (
                   <tr key={backup.id} className="hover:bg-slate-800/20 text-slate-300">
                     <td className="py-3 px-3 font-medium whitespace-nowrap">
-                      {new Date(backup.timestamp).toLocaleString()}
+                      {formatDateTime(backup.timestamp)}
                     </td>
                     <td className="py-3 px-3 font-mono break-all max-w-[200px]" title={backup.filePath}>
                       {backup.filename}

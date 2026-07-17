@@ -279,6 +279,27 @@ async function restoreItems(
   }
 }
 
+async function ensureProductionAttempts(
+  tx: Prisma.TransactionClient,
+  items: Array<{ id: string }>,
+) {
+  for (const item of items) {
+    const existing = await tx.productionAttempt.findFirst({
+      where: { orderItemId: item.id },
+      select: { id: true },
+    });
+    if (!existing) {
+      await tx.productionAttempt.create({
+        data: {
+          orderItemId: item.id,
+          attemptNumber: 1,
+          status: "Ready to Print",
+        },
+      });
+    }
+  }
+}
+
 export async function createOrder(input: OrderInput) {
   return prisma.$transaction(async (tx) => {
     let customer = input.customerId
@@ -347,8 +368,9 @@ export async function createOrder(input: OrderInput) {
         customerNotes: input.customerNotes || undefined,
         internalNotes: input.internalNotes || undefined,
         isTestOrder: input.isTestOrder ?? false,
-        items: {
-          create: lines.map((line) => ({
+      items: {
+          create: lines.map((line, index) => ({
+            itemSequence: index + 1,
             productVariantId: line.variant.id,
             description: line.variant.name,
             productNameSnapshot: line.variant.product.name,
@@ -370,7 +392,7 @@ export async function updateDraftOrder(id: string, input: OrderInput) {
   return prisma.$transaction(async (tx) => {
     const existing = await tx.order.findUnique({
       where: { id },
-      select: { id: true, stockCommitted: true },
+      select: { id: true, stockCommitted: true, items: { select: { itemSequence: true } } },
     });
     if (!existing) throw new Error("ORDER_NOT_FOUND");
     const variants = await tx.productVariant.findMany({ where: { id: { in: input.items.map((item) => item.variantId) }, isActive: true }, include: { product: true } });
@@ -398,8 +420,30 @@ export async function updateDraftOrder(id: string, input: OrderInput) {
       });
     }
 
+    const usedSequences = new Set<number>();
+    let nextSequence = Math.max(0, ...existing.items.map((item) => item.itemSequence)) + 1;
+    const items = lines.map((line) => {
+      const requested = line.itemSequence;
+      const itemSequence = requested && Number.isInteger(requested) && requested > 0 && !usedSequences.has(requested)
+        ? requested
+        : nextSequence++;
+      usedSequences.add(itemSequence);
+      return {
+        itemSequence,
+        productVariantId: line.variant.id,
+        description: line.variant.name,
+        productNameSnapshot: line.variant.product.name,
+        skuSnapshot: line.variant.sku,
+        productionCostSnapshot: line.variant.productionCost,
+        quantity: line.quantity,
+        unitPrice: line.variant.sellingPrice,
+        lineDiscountType: line.discountType,
+        lineDiscountValue: line.discountValue,
+        lineTotal: calculateTotals([line], "fixed", "0", "0").total,
+      };
+    });
     await tx.orderItem.deleteMany({ where: { orderId: id } });
-    return tx.order.update({ where: { id }, data: { customerId: input.customerId ?? undefined, dueDate: input.dueDate ? new Date(`${input.dueDate}T00:00:00.000Z`) : null, deliveryMethod: input.deliveryMethod || null, discountType: input.discountType, discountValue: input.discountValue, deliveryCharge: input.deliveryCharge, subtotal: totals.subtotal, total: totals.total, customerNotes: input.customerNotes || null, internalNotes: input.internalNotes || null, isTestOrder: input.isTestOrder ?? false, items: { create: lines.map((line) => ({ productVariantId: line.variant.id, description: line.variant.name, productNameSnapshot: line.variant.product.name, skuSnapshot: line.variant.sku, productionCostSnapshot: line.variant.productionCost, quantity: line.quantity, unitPrice: line.variant.sellingPrice, lineDiscountType: line.discountType, lineDiscountValue: line.discountValue, lineTotal: calculateTotals([line], "fixed", "0", "0").total })) } }, include: { items: true } });
+    return tx.order.update({ where: { id }, data: { customerId: input.customerId ?? undefined, dueDate: input.dueDate ? new Date(`${input.dueDate}T00:00:00.000Z`) : null, deliveryMethod: input.deliveryMethod || null, discountType: input.discountType, discountValue: input.discountValue, deliveryCharge: input.deliveryCharge, subtotal: totals.subtotal, total: totals.total, customerNotes: input.customerNotes || null, internalNotes: input.internalNotes || null, isTestOrder: input.isTestOrder ?? false, items: { create: items } }, include: { items: true } });
   });
 }
 
@@ -435,6 +479,7 @@ export async function transitionOrder(id: string, target: string) {
         });
       }
       await commitItems(tx, order, "Order approved");
+      await ensureProductionAttempts(tx, order.items);
       return tx.order.update({
         where: { id },
         data: {
@@ -443,6 +488,11 @@ export async function transitionOrder(id: string, target: string) {
           ...completionFields,
         },
       });
+    }
+    if (normalizedTarget === COMMIT_STATUS) {
+      // Backfill the initial production attempt for orders approved before
+      // attempt tracking existed. The lookup makes repeated transitions safe.
+      await ensureProductionAttempts(tx, order.items);
     }
     if (normalizedTarget === "Cancelled" && order.stockCommitted) {
       await restoreItems(tx, order, "Order cancelled");

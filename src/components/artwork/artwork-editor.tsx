@@ -180,6 +180,20 @@ export function ArtworkEditor({
   displayScaleRef.current = displayScale;
   const displayWidth = Math.round(width * displayScale);
   const displayHeight = Math.round(height * displayScale);
+  useEffect(() => {
+    const canvas = fabricCanvas.current;
+    const element = canvasElement.current;
+    if (!canvas || !element) return;
+    const root = element.parentElement;
+    if (!root) return;
+    for (const layer of [element, ...Array.from(root.querySelectorAll<HTMLCanvasElement>(".upper-canvas"))]) {
+      layer.style.width = `${displayWidth}px`;
+      layer.style.height = `${displayHeight}px`;
+      layer.style.display = "block";
+    }
+    canvas.calcOffset();
+    canvas.requestRenderAll();
+  }, [displayWidth, displayHeight]);
   const selectedObject = fabricCanvas.current?.getActiveObject();
   const selectedBounds = selectedObject?.getBoundingRect();
   const selectedImage =
@@ -1092,7 +1106,7 @@ export function ArtworkEditor({
 
   return (
     <div
-      className={`flex min-h-0 flex-col gap-3 ${editorFocused ? "outline outline-1 outline-emerald-500/50" : ""}`}
+      className={`flex h-full min-h-0 flex-col gap-2 overflow-hidden ${editorFocused ? "outline outline-1 outline-emerald-500/50" : ""}`}
       onMouseDown={() => workspaceRef.current?.focus()}
     >
       <div className="scroll-mt-24 flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">
@@ -1319,10 +1333,10 @@ export function ArtworkEditor({
         ) : null}
       </div>
       <div
-        className={`grid min-h-0 gap-3 ${leftCollapsed && rightCollapsed ? "lg:grid-cols-[minmax(0,1fr)]" : leftCollapsed ? "lg:grid-cols-[minmax(0,1fr)_280px]" : rightCollapsed ? "lg:grid-cols-[280px_minmax(0,1fr)]" : "lg:grid-cols-[280px_minmax(0,1fr)_280px]"}`}
+        className={`grid min-h-0 flex-1 gap-2 overflow-hidden ${leftCollapsed && rightCollapsed ? "lg:grid-cols-[minmax(0,1fr)]" : leftCollapsed ? "lg:grid-cols-[minmax(0,1fr)_280px]" : rightCollapsed ? "lg:grid-cols-[280px_minmax(0,1fr)]" : "lg:grid-cols-[280px_minmax(0,1fr)_280px]"}`}
       >
         {!leftCollapsed ? (
-          <aside className="hidden rounded-xl border border-slate-700 bg-slate-900 p-4 text-xs text-slate-300 lg:block">
+          <aside className="hidden min-h-0 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300 lg:block">
             <div className="flex items-center justify-between">
               <div className="flex gap-1">
                 <button
@@ -1491,7 +1505,7 @@ export function ArtworkEditor({
             const file = Array.from(event.clipboardData.files)[0];
             if (file) void addImageFile(file);
           }}
-          className="relative flex h-[calc(100vh-250px)] min-h-[520px] items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-[#172033] p-6 shadow-inner"
+          className="relative flex h-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-[#172033] p-3 shadow-inner"
         >
           <div
             className="relative shrink-0 rounded-lg border border-slate-500/70 bg-slate-950 shadow-2xl"
@@ -1546,7 +1560,7 @@ export function ArtworkEditor({
           </div>
         </div>
         {!rightCollapsed ? (
-          <aside className="rounded-xl border border-slate-700 bg-slate-900 p-4 text-xs text-slate-300">
+          <aside className="min-h-0 overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300">
             <button
               type="button"
               onClick={() => setRightCollapsed(true)}

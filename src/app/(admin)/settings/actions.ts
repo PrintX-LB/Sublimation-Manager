@@ -2,6 +2,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { clearAdminSession, getAdminSession, setAdminSession, verifyAdminCredentials } from "@/lib/admin-session";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 export async function adminLoginAction(formData: FormData) { const ok = await verifyAdminCredentials(String(formData.get("username") ?? ""), String(formData.get("password") ?? "")); if (!ok) redirect("/settings?admin=invalid"); await setAdminSession(); redirect("/settings?admin=unlocked"); }
 export async function adminLogoutAction() { await clearAdminSession(); redirect("/settings?admin=locked"); }
 export type ResetDevelopmentResult = { ok: boolean; message: string; counts?: Record<string, number> };
@@ -26,13 +27,15 @@ export async function resetDevelopmentDataAction(_previous: ResetDevelopmentResu
   ]);
   try {
     const counts = await prisma.$transaction(async (tx) => {
-      const materialConsumptions = await tx.productionMaterialConsumption.deleteMany();
-      const inventoryTransactions = await tx.inventoryTransaction.deleteMany();
+      // This protected development reset intentionally clears all operational
+      // inventory history, then leaves the configured inventory structure
+      // ready for clean restocking. Normal deletion never uses this path.
+      // Break self/cross-record foreign keys before deleting the history.
+      const inventoryReset = await clearInventoryForDevelopmentReset(tx);
       const sheetSlots = await tx.printSheetSlot.deleteMany();
       const sheetEvents = await tx.printSheetEvent.deleteMany();
       const incidents = await tx.productionIncident.deleteMany();
       const attempts = await tx.productionAttempt.deleteMany();
-      const stockMovements = await tx.stockMovement.deleteMany();
       const payments = await tx.payment.deleteMany();
       const orderFiles = await tx.orderFile.deleteMany();
       const versions = await tx.artworkVersion.deleteMany();
@@ -41,7 +44,12 @@ export async function resetDevelopmentDataAction(_previous: ResetDevelopmentResu
       const items = await tx.orderItem.deleteMany();
       const orders = await tx.order.deleteMany();
       const customers = await tx.customer.deleteMany();
-      return { materialConsumptions: materialConsumptions.count, inventoryTransactions: inventoryTransactions.count, sheetSlots: sheetSlots.count, sheetEvents: sheetEvents.count, incidents: incidents.count, attempts: attempts.count, stockMovements: stockMovements.count, payments: payments.count, orderFiles: orderFiles.count, artworkVersions: versions.count, artworkProjects: projects.count, printSheets: sheets.count, orderItems: items.count, orders: orders.count, customers: customers.count };
+      // Operational identifiers are reset together with their deleted records.
+      // Configuration sequences (if introduced later) are intentionally kept.
+      const sequences = await tx.sequence.deleteMany({
+        where: { key: { in: ["customer", "order-global", "print-sheet-number"] } },
+      });
+      return { materialConsumptions: inventoryReset.materialConsumptions, stockMovements: inventoryReset.stockMovements, inventoryTransactions: inventoryReset.inventoryTransactions, inventoryTransactionsDetached: inventoryReset.detached, sheetSlots: sheetSlots.count, sheetEvents: sheetEvents.count, incidents: incidents.count, attempts: attempts.count, payments: payments.count, orderFiles: orderFiles.count, artworkVersions: versions.count, artworkProjects: projects.count, printSheets: sheets.count, orderItems: items.count, orders: orders.count, customers: customers.count, sequences: sequences.count };
     });
     let fileErrors = 0;
     const { rm } = await import("node:fs/promises");
@@ -60,6 +68,7 @@ export async function resetDevelopmentDataAction(_previous: ResetDevelopmentResu
   }
 }
 import { saveOrderStorageSettings, runOrderStorageCleanup } from "@/lib/order-storage";
+import { clearInventoryForDevelopmentReset } from "@/lib/inventory/development-reset";
 import { requireAdmin } from "@/lib/admin-session";
 import { mkdir, writeFile, unlink, rm } from "node:fs/promises";
 import path from "node:path";
@@ -175,6 +184,7 @@ export async function createManualBackupAction() {
     await createBackup("manual");
     redirect("/settings?backup=created");
   } catch (err) {
+    if (isRedirectError(err)) throw err;
     redirect(`/settings?backup=failed&error=${encodeURIComponent(err instanceof Error ? err.message : "Backup failed")}`);
   }
 }

@@ -144,7 +144,7 @@ export function ProductForm({
                 ["optionName", "Option type (e.g. Size)"],
                 ["optionValue", "Option value (e.g. Large)"],
                 ["sellingPrice", "Selling price"],
-                ["productionCost", "Production cost"],
+                ["productionCost", "Blank product cost"],
                 ["stockQuantity", "Current stock"],
                 ["reorderLevel", "Low-stock threshold"],
                 ["stockPerUnit", "Stock consumed per sold unit"],

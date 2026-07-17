@@ -79,6 +79,13 @@ QR production tickets, scanner routes, QR tokens and barcode-printer integration
 - Sheet assignment history is retained while only ACTIVE assignments block pairing; release and regeneration operations are transactional and idempotent.
 - Production board cards expose the active attempt and keep incident, artwork and payment actions available without duplicating their services.
 
+## Cut Mark Improvements
+
+- Print templates support None, Corner marks and Full outline modes.
+- Corner marks use configurable physical millimetre length, offset and stroke thickness and are rendered per occupied transfer slot.
+- Artwork remains mirrored independently; production marks, order numbers and strips remain readable and non-mirrored.
+- Generated sheets snapshot their cut-mark settings so reopening, recreation and historical output do not depend on later template edits.
+
 ## Cross-Module QA and Stabilization
 
 - End-to-end customer, order, artwork, payment and production workflows are reviewed together.

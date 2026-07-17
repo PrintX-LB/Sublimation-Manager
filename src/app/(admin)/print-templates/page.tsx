@@ -36,6 +36,9 @@ export default async function TemplatesPage() {
               Safe area {template.safeAreaMm.toString()} mm · Bleed{" "}
               {template.bleedMm.toString()} mm
             </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Cut marks: {template.cutMarkMode === "CORNER_MARKS" ? "Corner marks" : template.cutMarkMode === "NONE" ? "None" : "Full outline"}
+            </p>
           </article>
         ))}
       </section>

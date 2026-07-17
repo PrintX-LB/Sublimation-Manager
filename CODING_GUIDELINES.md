@@ -18,5 +18,8 @@
 - Playwright and disposable verification workflows must use isolated SQLite, storage, sheet and backup paths and must disconnect Prisma before cleanup.
 - Never commit secrets, uploads, SQLite database files or `.env.local`.
 - Keep UI consistent with the PrintX dark theme and accessible controls.
+- Render production marks separately from mirrored artwork; never mirror order metadata or production strips.
+- Convert cut-mark geometry from physical millimetres through the sheet DPI, and preserve the selected settings on generated-sheet records.
+- Historical generated sheets must use their saved cut-mark configuration rather than current template settings.
 - Keep components focused and avoid premature abstraction.
 - Report the exact files modified and remaining limitations.

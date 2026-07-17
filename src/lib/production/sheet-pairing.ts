@@ -1,12 +1,17 @@
 import { mmToPixels } from "@/lib/production-sheet";
 
 export type PairingAttempt = {
-  id: string; attemptNumber: number; status: string; createdAt: Date; orderNumber: string; orderId: string; orderItemId?: string; customerName: string; productName: string; variantName: string; dueDate: Date | null; priority: string; artworkVersionId: string; artworkPath: string; templateName: string; compatibilityKey: string; assigned: boolean;
+  id: string; attemptNumber: number; status: string; createdAt: Date; orderNumber: string; orderId: string; orderItemId?: string; itemSequence?: number; customerName: string; productName: string; variantName: string; dueDate: Date | null; priority: string; artworkVersionId: string; artworkPath: string; templateName: string; compatibilityKey: string; assigned: boolean;
 };
 
-export function templateCompatibilityKey(input: { widthMm: number | { toString(): string }; heightMm: number | { toString(): string }; dpi: number; name: string; mirror?: boolean; contour?: boolean }) {
+export function templateCompatibilityKey(input: { widthMm: number | { toString(): string }; heightMm: number | { toString(): string }; dpi: number; name: string; mirror?: boolean; contour?: boolean; cutMarkMode?: string }) {
   const width = mmToPixels(Number(input.widthMm), input.dpi); const height = mmToPixels(Number(input.heightMm), input.dpi);
-  return `${input.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_${width}X${height}_${input.dpi}DPI_${input.mirror === false ? "DIRECT" : "MIRRORED"}_${input.contour ? "CONTOUR" : "NO_CONTOUR"}`;
+  const mark = input.cutMarkMode === "CORNER_MARKS"
+    ? "CORNER_MARKS"
+    : input.cutMarkMode === "FULL_OUTLINE" || input.contour
+      ? "CONTOUR"
+      : "NO_CONTOUR";
+  return `${input.name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_${width}X${height}_${input.dpi}DPI_${input.mirror === false ? "DIRECT" : "MIRRORED"}_${mark}`;
 }
 
 export function isCompatible(a: PairingAttempt, b: PairingAttempt) { return a.compatibilityKey === b.compatibilityKey; }

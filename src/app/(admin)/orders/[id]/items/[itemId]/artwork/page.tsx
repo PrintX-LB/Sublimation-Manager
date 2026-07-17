@@ -116,14 +116,12 @@ export default async function ArtworkPage({
     : undefined;
 
   return (
-    <>
-      <BackNavigation label="Back to Order" fallbackRoute={`/orders/${item.order.id}`} />
-      <PageHeading
-        title="Artwork Editor"
-        description={`${item.order.orderNumber} · ${item.productNameSnapshot}`}
-      />
-
-      <section className="mt-8 rounded-2xl border bg-white p-6 shadow-panel">
+    <div className="flex h-full min-h-0 flex-col gap-2 overflow-hidden">
+      <div className="shrink-0"><BackNavigation label="Back to Order" fallbackRoute={`/orders/${item.order.id}`} /></div>
+      <div className="shrink-0">
+        <PageHeading title="Artwork Editor" description={`${item.order.orderNumber} · ${item.productNameSnapshot}`} />
+      </div>
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border bg-white p-3 shadow-panel">
         {!item.customerArtworkPath || !artworkDataUrl ? (
           /* ── No artwork uploaded yet ── */
           <div className="rounded-xl border-2 border-dashed p-10 text-center">
@@ -174,6 +172,6 @@ export default async function ArtworkPage({
           />
         )}
       </section>
-    </>
+    </div>
   );
 }

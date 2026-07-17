@@ -582,7 +582,8 @@ export async function duplicateOrderAction(formData: FormData) {
         internalNotes: order.internalNotes,
         status: "Draft",
         items: {
-          create: order.items.map((line) => ({
+          create: order.items.map((line, index) => ({
+            itemSequence: index + 1,
             productVariantId: line.productVariantId,
             description: line.description,
             productNameSnapshot: line.productNameSnapshot,
@@ -606,21 +607,78 @@ export async function duplicateOrderAction(formData: FormData) {
     throw new Error("The order could not be duplicated.");
   }
 }
-export async function permanentlyDeleteTestOrderAction(formData: FormData) {
-  const id = orderIdSchema.parse(formData.get("orderId")); const confirmation = String(formData.get("deleteOrderConfirmation") ?? "");
+/**
+ * Permanently purges an order for the local owner.  Admin Mode is the only
+ * authorization boundary; status, payment and stock state are deliberately
+ * not used as a second permission check.  Immutable inventory/material
+ * history is retained by detaching its optional order references before the
+ * operational order records are removed.
+ */
+export async function permanentlyDeleteOrderAction(formData: FormData) {
+  const id = orderIdSchema.parse(formData.get("orderId"));
+  const confirmation = String(formData.get("deleteOrderConfirmation") ?? "").trim();
   await requireAdmin();
-  await prisma.$transaction(async (tx) => {
-    const order = await tx.order.findUnique({ where: { id }, include: { payments: { select: { id: true } }, stockMovements: { select: { id: true } }, items: { include: { stockMovements: { select: { id: true } } } } } });
+
+  const filePaths = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        orderNumber: true,
+        files: { select: { storagePath: true } },
+        items: { select: { id: true, customerArtworkPath: true, printReadyArtworkPath: true } },
+      },
+    });
     if (!order) throw new Error("ORDER_NOT_FOUND");
-    const blocked = !order.isTestOrder || order.status !== "Draft" || order.payments.length > 0 || order.stockCommitted || order.stockMovements.length > 0 || order.items.some((item) => item.stockMovements.length > 0) || confirmation !== order.orderNumber;
-    await tx.adminAuditLog.create({ data: { action: "permanent_test_order_delete", orderNumber: order.orderNumber, success: !blocked, reason: blocked ? "Eligibility or confirmation check failed" : undefined } });
-    if (blocked) throw new Error("TEST_ORDER_DELETE_BLOCKED");
+    if (confirmation !== order.orderNumber) {
+      await tx.adminAuditLog.create({ data: { action: "permanent_order_delete", orderNumber: order.orderNumber, success: false, reason: "Order number confirmation did not match" } });
+      throw new Error("ORDER_DELETE_CONFIRMATION_MISMATCH");
+    }
+
+    const itemIds = order.items.map((item) => item.id);
+    const attemptIds = (await tx.productionAttempt.findMany({ where: { orderItemId: { in: itemIds } }, select: { id: true } })).map((item) => item.id);
+    const incidentIds = (await tx.productionIncident.findMany({ where: { orderItemId: { in: itemIds } }, select: { id: true } })).map((item) => item.id);
+
+    // Keep immutable stock/material history, but remove references to the
+    // deleted operational records so SQLite foreign keys remain valid.
+    await tx.inventoryTransaction.updateMany({ where: { OR: [{ orderId: id }, { orderItemId: { in: itemIds } }, { productionAttemptId: { in: attemptIds } }, { productionIncidentId: { in: incidentIds } }] }, data: { orderId: null, orderItemId: null, productionAttemptId: null, productionIncidentId: null } });
+    await tx.productionMaterialConsumption.updateMany({ where: { OR: [{ orderId: id }, { orderItemId: { in: itemIds } }, { productionAttemptId: { in: attemptIds } }, { productionIncidentId: { in: incidentIds } }] }, data: { orderId: null, orderItemId: null, productionAttemptId: null, productionIncidentId: null } });
+    await tx.stockMovement.updateMany({ where: { OR: [{ orderId: id }, { orderItemId: { in: itemIds } }, { productionAttemptId: { in: attemptIds } }, { productionIncidentId: { in: incidentIds } }] }, data: { orderId: null, orderItemId: null, productionAttemptId: null, productionIncidentId: null } });
+
+    // A generated sheet may contain another order. Remove only this order's
+    // slot; the sheet, file and other order slots remain intact.
+    await tx.printSheetSlot.deleteMany({ where: { orderId: id } });
+    await tx.payment.deleteMany({ where: { orderId: id } });
     await tx.orderFile.deleteMany({ where: { orderId: id } });
+    await tx.productionIncident.deleteMany({ where: { orderItemId: { in: itemIds } } });
+    await tx.productionAttempt.deleteMany({ where: { orderItemId: { in: itemIds } } });
     await tx.orderItem.deleteMany({ where: { orderId: id } });
+    await tx.adminAuditLog.create({ data: { action: "permanent_order_delete", orderNumber: order.orderNumber, success: true, reason: "Admin Mode purge; immutable inventory/material history retained without order references" } });
     await tx.order.delete({ where: { id } });
+
+    return [
+      ...order.files.map((file) => file.storagePath),
+      ...order.items.flatMap((item) => [item.customerArtworkPath, item.printReadyArtworkPath].filter((value): value is string => Boolean(value))),
+    ];
   });
-  revalidatePath("/orders"); redirect("/orders");
+
+  // Database deletion is already committed. File cleanup is best-effort and
+  // never turns a successful transactional purge into a partial DB rollback.
+  await Promise.all(filePaths.map(async (relative) => {
+    const candidate = path.resolve(process.cwd(), relative);
+    const allowed = [path.resolve(process.cwd(), "uploads"), path.resolve(process.cwd(), "data")].some((root) => candidate.startsWith(`${root}${path.sep}`));
+    if (allowed) await rm(candidate, { force: true }).catch((error) => console.error("Order file cleanup failed", relative, error));
+  }));
+  revalidatePath("/orders");
+  revalidatePath("/production");
+  revalidatePath("/production/sheets");
+  revalidatePath("/inventory");
+  revalidatePath("/revenue");
+  redirect("/orders?deleted=1");
 }
+
+// Backwards-compatible action name used by older UI components.
+export const permanentlyDeleteTestOrderAction = permanentlyDeleteOrderAction;
 export async function convertCancelledTestOrderToDraftAction(formData: FormData) {
   const id = orderIdSchema.parse(formData.get("orderId")); await requireAdmin();
   await prisma.$transaction(async (tx) => {

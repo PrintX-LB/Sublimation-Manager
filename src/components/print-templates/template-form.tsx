@@ -67,6 +67,26 @@ export function TemplateForm({
           className="mt-1 w-full rounded-lg border p-2"
         />
       </label>
+      <label>
+        Cut marks
+        <select name="cutMarkMode" defaultValue={template?.cutMarkMode ?? "CORNER_MARKS"} className="mt-1 w-full rounded-lg border p-2">
+          <option value="NONE">None</option>
+          <option value="CORNER_MARKS">Corner marks (recommended)</option>
+          <option value="FULL_OUTLINE">Full outline</option>
+        </select>
+      </label>
+      <label>
+        Mark length (mm)
+        <input name="cutMarkLengthMm" type="number" min="0.1" step="0.1" defaultValue={template?.cutMarkLengthMm?.toString() ?? "8"} className="mt-1 w-full rounded-lg border p-2" />
+      </label>
+      <label>
+        Mark offset (mm)
+        <input name="cutMarkOffsetMm" type="number" min="0" step="0.1" defaultValue={template?.cutMarkOffsetMm?.toString() ?? "3"} className="mt-1 w-full rounded-lg border p-2" />
+      </label>
+      <label>
+        Line thickness (mm)
+        <input name="cutMarkThicknessMm" type="number" min="0.1" step="0.1" defaultValue={template?.cutMarkThicknessMm?.toString() ?? "0.3"} className="mt-1 w-full rounded-lg border p-2" />
+      </label>
       <button className="rounded bg-brand-600 px-4 py-2 font-semibold text-white sm:col-span-2">
         Save template
       </button>

@@ -1,16 +1,16 @@
 "use client";
 
 import { useState, useTransition, useMemo } from "react";
-import { 
-  Search, 
-  AlertTriangle, 
-  CheckCircle2, 
-  XCircle, 
-  History, 
-  Coins, 
-  Package, 
+import {
+  Search,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  History,
+  Coins,
+  Package,
   X,
-  ChevronDown
+  ChevronDown,
 } from "lucide-react";
 import { addStockAction, removeStockAction } from "@/app/(admin)/stock/actions";
 import { formatUSD } from "@/lib/money";
@@ -65,13 +65,17 @@ export function StockTableClient({
   const [sortBy, setSortBy] = useState("product-name");
 
   // Modal States
-  const [adjustingVariant, setAdjustingVariant] = useState<SerializedVariant | null>(null);
-  const [adjustType, setAdjustType] = useState<"increase" | "decrease">("increase");
+  const [adjustingVariant, setAdjustingVariant] =
+    useState<SerializedVariant | null>(null);
+  const [adjustType, setAdjustType] = useState<"increase" | "decrease">(
+    "increase",
+  );
   const [adjustQuantity, setAdjustQuantity] = useState("");
   const [adjustReason, setAdjustReason] = useState("");
   const [adjustError, setAdjustError] = useState("");
 
-  const [historyVariant, setHistoryVariant] = useState<SerializedVariant | null>(null);
+  const [historyVariant, setHistoryVariant] =
+    useState<SerializedVariant | null>(null);
 
   const [isPending, startTransition] = useTransition();
 
@@ -105,12 +109,16 @@ export function StockTableClient({
     if (!adjustingVariant) return;
     setAdjustError("");
 
-    if (!adjustQuantity || parseFloat(adjustQuantity) <= 0 || isNaN(parseFloat(adjustQuantity))) {
-      setAdjustError("Please enter a valid positive quantity.");
+    if (
+      !/^\d+$/.test(adjustQuantity) ||
+      parseFloat(adjustQuantity) <= 0 ||
+      isNaN(parseFloat(adjustQuantity))
+    ) {
+      setAdjustError("Inventory quantities must be whole units.");
       return;
     }
 
-    if (!adjustReason.trim()) {
+    if (adjustType === "decrease" && !adjustReason.trim()) {
       setAdjustError("A reason for adjustment is required.");
       return;
     }
@@ -133,7 +141,9 @@ export function StockTableClient({
         setAdjustQuantity("");
         setAdjustReason("");
       } catch (err: unknown) {
-        setAdjustError(err instanceof Error ? err.message : "Something went wrong.");
+        setAdjustError(
+          err instanceof Error ? err.message : "Something went wrong.",
+        );
       }
     });
   };
@@ -148,7 +158,7 @@ export function StockTableClient({
       result = result.filter(
         (v) =>
           v.productName.toLowerCase().includes(q) ||
-          v.name.toLowerCase().includes(q)
+          v.name.toLowerCase().includes(q),
       );
     }
 
@@ -171,7 +181,9 @@ export function StockTableClient({
     result.sort((a, b) => {
       switch (sortBy) {
         case "product-name":
-          return `${a.productName} ${a.name}`.localeCompare(`${b.productName} ${b.name}`);
+          return `${a.productName} ${a.name}`.localeCompare(
+            `${b.productName} ${b.name}`,
+          );
         case "stock-asc":
           return a.currentStock - b.currentStock;
         case "stock-desc":
@@ -190,7 +202,14 @@ export function StockTableClient({
     });
 
     return result;
-  }, [variants, search, categoryFilter, lowStockFilter, outOfStockFilter, sortBy]);
+  }, [
+    variants,
+    search,
+    categoryFilter,
+    lowStockFilter,
+    outOfStockFilter,
+    sortBy,
+  ]);
 
   // Last movements mapped by variant ID for faster lookup in table
   const lastMovementsByVariant = useMemo(() => {
@@ -255,65 +274,90 @@ export function StockTableClient({
     <div className="space-y-6">
       {/* Summary Cards */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm flex items-center justify-between">
+        <article className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Products</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">{globalStats.totalProducts}</p>
-            <p className="text-xs text-slate-400 mt-1 font-medium">Product variants monitored</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Total Products
+            </p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">
+              {globalStats.totalProducts}
+            </p>
+            <p className="mt-1 text-xs font-medium text-slate-400">
+              Product variants monitored
+            </p>
           </div>
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg">
+          <div className="rounded-lg bg-blue-50 p-3 text-blue-600">
             <Package size={20} />
           </div>
         </article>
 
-        <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm flex items-center justify-between">
+        <article className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Low Stock</p>
-            <p className="text-2xl font-bold text-amber-700 mt-1">{globalStats.lowStockCount}</p>
-            <p className="text-xs text-slate-400 mt-1 font-medium">Below low-stock threshold</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Low Stock
+            </p>
+            <p className="mt-1 text-2xl font-bold text-amber-700">
+              {globalStats.lowStockCount}
+            </p>
+            <p className="mt-1 text-xs font-medium text-slate-400">
+              Below low-stock threshold
+            </p>
           </div>
-          <div className="p-3 bg-amber-50 text-amber-600 rounded-lg">
+          <div className="rounded-lg bg-amber-50 p-3 text-amber-600">
             <AlertTriangle size={20} />
           </div>
         </article>
 
-        <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm flex items-center justify-between">
+        <article className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Out of Stock</p>
-            <p className="text-2xl font-bold text-red-600 mt-1">{globalStats.outOfStockCount}</p>
-            <p className="text-xs text-slate-400 mt-1 font-medium">Zero or negative inventory</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Out of Stock
+            </p>
+            <p className="mt-1 text-2xl font-bold text-red-600">
+              {globalStats.outOfStockCount}
+            </p>
+            <p className="mt-1 text-xs font-medium text-slate-400">
+              Zero or negative inventory
+            </p>
           </div>
-          <div className="p-3 bg-red-50 text-red-600 rounded-lg">
+          <div className="rounded-lg bg-red-50 p-3 text-red-600">
             <XCircle size={20} />
           </div>
         </article>
 
-        <article className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm flex items-center justify-between">
+        <article className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Inventory Value</p>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Inventory Value
+            </p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">
               {formatUSD(globalStats.totalValuation)}
             </p>
-            <p className="text-xs text-slate-400 mt-1 font-medium">At production cost</p>
+            <p className="mt-1 text-xs font-medium text-slate-400">
+              At blank product cost
+            </p>
           </div>
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
+          <div className="rounded-lg bg-emerald-50 p-3 text-emerald-600">
             <Coins size={20} />
           </div>
         </article>
       </section>
 
       {/* Filter and Control Bar */}
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
+      <section className="flex flex-col justify-between gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
           {/* Search */}
           <div className="relative w-full max-w-xs">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search
+              size={15}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
             <input
               type="text"
               placeholder="Search product or variant..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 transition"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-9 pr-4 text-sm transition focus:outline-none focus:ring-1 focus:ring-brand-500"
             />
           </div>
 
@@ -322,7 +366,7 @@ export function StockTableClient({
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
-              className="appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 transition"
+              className="appearance-none rounded-xl border border-slate-200 bg-slate-50 py-2 pl-3 pr-8 text-sm transition focus:outline-none focus:ring-1 focus:ring-brand-500"
             >
               <option value="all">All Categories</option>
               {categories.map((cat) => (
@@ -331,12 +375,15 @@ export function StockTableClient({
                 </option>
               ))}
             </select>
-            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <ChevronDown
+              size={14}
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
           </div>
 
           {/* Checkboxes */}
           <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-600 select-none cursor-pointer">
+            <label className="flex cursor-pointer select-none items-center gap-2 text-sm font-medium text-slate-600">
               <input
                 type="checkbox"
                 checked={lowStockFilter}
@@ -345,7 +392,7 @@ export function StockTableClient({
               />
               Low Stock Only
             </label>
-            <label className="flex items-center gap-2 text-sm font-medium text-slate-600 select-none cursor-pointer">
+            <label className="flex cursor-pointer select-none items-center gap-2 text-sm font-medium text-slate-600">
               <input
                 type="checkbox"
                 checked={outOfStockFilter}
@@ -358,12 +405,12 @@ export function StockTableClient({
         </div>
 
         {/* Sort and Reset */}
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex shrink-0 items-center gap-3">
           <div className="relative">
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="appearance-none rounded-xl border border-slate-200 bg-slate-50 pl-3 pr-8 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 transition"
+              className="appearance-none rounded-xl border border-slate-200 bg-slate-50 py-2 pl-3 pr-8 text-sm transition focus:outline-none focus:ring-1 focus:ring-brand-500"
             >
               <option value="product-name">Product Name A-Z</option>
               <option value="stock-asc">Current Stock (Low–High)</option>
@@ -373,10 +420,16 @@ export function StockTableClient({
               <option value="min-stock-asc">Min Stock (Low–High)</option>
               <option value="min-stock-desc">Min Stock (High–Low)</option>
             </select>
-            <ChevronDown size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            <ChevronDown
+              size={14}
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400"
+            />
           </div>
 
-          {(search || categoryFilter !== "all" || lowStockFilter || outOfStockFilter) && (
+          {(search ||
+            categoryFilter !== "all" ||
+            lowStockFilter ||
+            outOfStockFilter) && (
             <button
               onClick={() => {
                 setSearch("");
@@ -384,7 +437,7 @@ export function StockTableClient({
                 setLowStockFilter(false);
                 setOutOfStockFilter(false);
               }}
-              className="text-xs font-semibold text-brand-600 hover:text-brand-700 transition"
+              className="text-xs font-semibold text-brand-600 transition hover:text-brand-700"
             >
               Reset Filters
             </button>
@@ -393,9 +446,9 @@ export function StockTableClient({
       </section>
 
       {/* Main Inventory Table */}
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
+      <section className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full min-w-[1000px] text-left text-sm">
-          <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-500 tracking-wider border-b border-slate-100">
+          <thead className="border-b border-slate-100 bg-slate-50 text-[11px] font-bold uppercase tracking-wider text-slate-500">
             <tr>
               <th className="px-5 py-3.5">Product</th>
               <th className="px-4 py-3.5 text-right">Current Stock</th>
@@ -410,7 +463,10 @@ export function StockTableClient({
           <tbody className="divide-y divide-slate-100">
             {filteredAndSortedVariants.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-5 py-12 text-center text-slate-400 italic">
+                <td
+                  colSpan={8}
+                  className="px-5 py-12 text-center italic text-slate-400"
+                >
                   No matching inventory items found.
                 </td>
               </tr>
@@ -419,11 +475,15 @@ export function StockTableClient({
                 const lastMov = lastMovementsByVariant[v.id];
 
                 return (
-                  <tr key={v.id} className="hover:bg-slate-50/50 transition">
+                  <tr key={v.id} className="transition hover:bg-slate-50/50">
                     {/* Product */}
                     <td className="px-5 py-3">
-                      <div className="font-semibold text-slate-900">{v.productName}</div>
-                      <div className="text-xs text-slate-500 mt-0.5">{v.name} • {v.categoryName}</div>
+                      <div className="font-semibold text-slate-900">
+                        {v.productName}
+                      </div>
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        {v.name} • {v.categoryName}
+                      </div>
                     </td>
 
                     {/* Current Stock */}
@@ -437,7 +497,9 @@ export function StockTableClient({
                     </td>
 
                     {/* Available Stock */}
-                    <td className={`px-4 py-3 text-right font-semibold ${v.availableStock <= 0 ? "text-red-600" : "text-slate-900"}`}>
+                    <td
+                      className={`px-4 py-3 text-right font-semibold ${v.availableStock <= 0 ? "text-red-600" : "text-slate-900"}`}
+                    >
                       {v.availableStock.toString()}
                     </td>
 
@@ -449,28 +511,32 @@ export function StockTableClient({
                     {/* Status Badge */}
                     <td className="px-4 py-3 text-center">
                       <span
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${
                           v.status === "Healthy"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                             : v.status === "Low Stock"
-                            ? "bg-amber-50 text-amber-700 border-amber-200"
-                            : "bg-red-50 text-red-700 border-red-200"
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : "border-red-200 bg-red-50 text-red-700"
                         }`}
                       >
                         {v.status === "Healthy" && <CheckCircle2 size={12} />}
-                        {v.status === "Low Stock" && <AlertTriangle size={12} />}
+                        {v.status === "Low Stock" && (
+                          <AlertTriangle size={12} />
+                        )}
                         {v.status === "Out of Stock" && <XCircle size={12} />}
                         {v.status}
                       </span>
                     </td>
 
                     {/* Last Stock Movement */}
-                    <td className="px-4 py-3 text-slate-600 text-xs">
+                    <td className="px-4 py-3 text-xs text-slate-600">
                       {lastMov ? (
                         <div>
                           <span
                             className={`font-semibold ${
-                              lastMov.quantityChange > 0 ? "text-emerald-600" : "text-rose-600"
+                              lastMov.quantityChange > 0
+                                ? "text-emerald-600"
+                                : "text-rose-600"
                             }`}
                           >
                             {lastMov.quantityChange > 0 ? "+" : ""}
@@ -480,7 +546,7 @@ export function StockTableClient({
                             {" "}
                             ({getMovementTypeLabel(lastMov.movementType)})
                           </span>
-                          <div className="text-[10px] text-slate-400 mt-0.5">
+                          <div className="mt-0.5 text-[10px] text-slate-400">
                             {formatRelativeTime(lastMov.createdAt)}
                           </div>
                         </div>
@@ -490,7 +556,7 @@ export function StockTableClient({
                     </td>
 
                     {/* Actions */}
-                    <td className="px-5 py-3 text-right space-x-2 whitespace-nowrap">
+                    <td className="space-x-2 whitespace-nowrap px-5 py-3 text-right">
                       <button
                         onClick={() => {
                           setAdjustingVariant(v);
@@ -499,13 +565,13 @@ export function StockTableClient({
                           setAdjustReason("");
                           setAdjustError("");
                         }}
-                        className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm transition"
+                        className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
                       >
                         Adjust Stock
                       </button>
                       <button
                         onClick={() => setHistoryVariant(v)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-sm transition"
+                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
                         title="View history"
                       >
                         <History size={13} />
@@ -522,55 +588,71 @@ export function StockTableClient({
 
       {/* Adjust Stock Modal */}
       {adjustingVariant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="animate-in fade-in zoom-in-95 w-full max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl duration-150">
             {/* Modal Header */}
-            <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between bg-slate-50">
-              <h3 className="font-bold text-slate-900 text-base">Adjust Stock</h3>
+            <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-6 py-4">
+              <h3 className="text-base font-bold text-slate-900">
+                Adjust Stock
+              </h3>
               <button
                 onClick={() => setAdjustingVariant(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
               >
                 <X size={18} />
               </button>
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSaveAdjustment} className="p-6 space-y-4">
+            <form onSubmit={handleSaveAdjustment} className="space-y-4 p-6">
               <div>
-                <p className="text-xs text-slate-400 uppercase font-semibold tracking-wider">Product Variant</p>
-                <p className="font-semibold text-slate-900 text-sm mt-1">{adjustingVariant.productName}</p>
-                <p className="text-xs text-slate-500 mt-0.5">{adjustingVariant.name}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Product Variant
+                </p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">
+                  {adjustingVariant.productName}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {adjustingVariant.name}
+                </p>
               </div>
 
-              <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 flex justify-between text-sm">
+              <div className="flex justify-between rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm">
                 <div>
-                  <span className="text-slate-500 text-xs">Current Stock</span>
-                  <p className="font-bold text-slate-900 text-lg mt-0.5">{adjustingVariant.currentStock}</p>
+                  <span className="text-xs text-slate-500">Current Stock</span>
+                  <p className="mt-0.5 text-lg font-bold text-slate-900">
+                    {adjustingVariant.currentStock}
+                  </p>
                 </div>
                 <div>
-                  <span className="text-slate-500 text-xs">Available Stock</span>
-                  <p className="font-bold text-slate-900 text-lg mt-0.5">{adjustingVariant.availableStock}</p>
+                  <span className="text-xs text-slate-500">
+                    Available Stock
+                  </span>
+                  <p className="mt-0.5 text-lg font-bold text-slate-900">
+                    {adjustingVariant.availableStock}
+                  </p>
                 </div>
                 <div>
-                  <span className="text-slate-500 text-xs">Reserved Stock</span>
-                  <p className="font-bold text-slate-900 text-lg mt-0.5">{adjustingVariant.reservedStock}</p>
+                  <span className="text-xs text-slate-500">Reserved Stock</span>
+                  <p className="mt-0.5 text-lg font-bold text-slate-900">
+                    {adjustingVariant.reservedStock}
+                  </p>
                 </div>
               </div>
 
               {/* Selector */}
               <div>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-2">
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Adjustment Type
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setAdjustType("increase")}
-                    className={`py-2 px-3 rounded-lg border text-sm font-semibold transition flex items-center justify-center gap-1.5 ${
+                    className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
                       adjustType === "increase"
-                        ? "bg-emerald-50 border-emerald-500 text-emerald-700"
-                        : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                        ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                     }`}
                   >
                     Add Stock
@@ -578,10 +660,10 @@ export function StockTableClient({
                   <button
                     type="button"
                     onClick={() => setAdjustType("decrease")}
-                    className={`py-2 px-3 rounded-lg border text-sm font-semibold transition flex items-center justify-center gap-1.5 ${
+                    className={`flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
                       adjustType === "decrease"
-                        ? "bg-rose-50 border-rose-500 text-rose-700"
-                        : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                        ? "border-rose-500 bg-rose-50 text-rose-700"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
                     }`}
                   >
                     Remove Stock
@@ -591,58 +673,67 @@ export function StockTableClient({
 
               {/* Quantity */}
               <div>
-                <label htmlFor="adjust-qty" className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
+                <label
+                  htmlFor="adjust-qty"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500"
+                >
                   Quantity *
                 </label>
                 <input
                   id="adjust-qty"
                   type="number"
-                  step="any"
+                  step="1"
                   min="0"
                   required
                   placeholder="e.g. 10"
                   value={adjustQuantity}
                   onChange={(e) => setAdjustQuantity(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 transition"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm transition focus:outline-none focus:ring-1 focus:ring-brand-500"
                 />
               </div>
 
-              {/* Reason */}
+              {/* Reason is required for corrections/removals, optional for receiving stock. */}
               <div>
-                <label htmlFor="adjust-reason" className="text-xs font-semibold text-slate-500 uppercase tracking-wider block mb-1">
-                  Reason *
+                <label
+                  htmlFor="adjust-reason"
+                  className="mb-1 block text-xs font-semibold uppercase tracking-wider text-slate-500"
+                >
+                  Reason{adjustType === "decrease" ? " *" : " (optional)"}
                 </label>
                 <input
                   id="adjust-reason"
                   type="text"
-                  required
-                  placeholder="e.g. Supplier delivery or stock recount"
+                  required={adjustType === "decrease"}
+                  placeholder={adjustType === "decrease" ? "e.g. Stock recount" : "Optional receiving note"}
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 transition"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm transition focus:outline-none focus:ring-1 focus:ring-brand-500"
                   maxLength={500}
                 />
               </div>
 
               {adjustError && (
-                <p role="alert" className="text-xs text-red-600 bg-red-50 p-2.5 rounded-lg border border-red-100">
+                <p
+                  role="alert"
+                  className="rounded-lg border border-red-100 bg-red-50 p-2.5 text-xs text-red-600"
+                >
                   {adjustError}
                 </p>
               )}
 
               {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-2 border-t border-slate-100 pt-4 mt-6">
+              <div className="mt-6 flex items-center justify-end gap-2 border-t border-slate-100 pt-4">
                 <button
                   type="button"
                   onClick={() => setAdjustingVariant(null)}
-                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm transition"
+                  className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="rounded-lg bg-brand-600 hover:bg-brand-700 px-4 py-2 text-sm font-semibold text-white shadow-sm transition disabled:opacity-50"
+                  className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-700 disabled:opacity-50"
                 >
                   {isPending ? "Saving..." : "Save"}
                 </button>
@@ -654,34 +745,36 @@ export function StockTableClient({
 
       {/* History Modal */}
       {historyVariant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="animate-in fade-in zoom-in-95 flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl duration-150">
             {/* Modal Header */}
-            <div className="border-b border-slate-100 px-6 py-4 flex items-center justify-between bg-slate-50 shrink-0">
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-slate-50 px-6 py-4">
               <div>
-                <h3 className="font-bold text-slate-900 text-base">Stock Movement History</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
+                <h3 className="text-base font-bold text-slate-900">
+                  Stock Movement History
+                </h3>
+                <p className="mt-0.5 text-xs text-slate-500">
                   {historyVariant.productName} ({historyVariant.name})
                 </p>
               </div>
               <button
                 onClick={() => setHistoryVariant(null)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+                className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
               >
                 <X size={18} />
               </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto flex-1">
+            <div className="flex-1 overflow-y-auto p-6">
               {selectedHistoryMovements.length === 0 ? (
-                <div className="text-center text-slate-400 italic py-12">
+                <div className="py-12 text-center italic text-slate-400">
                   No stock movements recorded for this item.
                 </div>
               ) : (
-                <div className="rounded-xl border border-slate-100 overflow-hidden shadow-sm">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-50 font-bold uppercase text-slate-500 text-[10px] tracking-wider border-b border-slate-100">
+                <div className="overflow-hidden rounded-xl border border-slate-100 shadow-sm">
+                  <table className="w-full border-collapse text-left text-xs">
+                    <thead className="border-b border-slate-100 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                       <tr>
                         <th className="px-4 py-3">When</th>
                         <th className="px-3 py-3 text-right">Change</th>
@@ -692,8 +785,11 @@ export function StockTableClient({
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700">
                       {selectedHistoryMovements.map((m) => (
-                        <tr key={m.id} className="hover:bg-slate-50/30 transition">
-                          <td className="px-4 py-3 whitespace-nowrap">
+                        <tr
+                          key={m.id}
+                          className="transition hover:bg-slate-50/30"
+                        >
+                          <td className="whitespace-nowrap px-4 py-3">
                             {new Date(m.createdAt).toLocaleString("en-GB", {
                               day: "2-digit",
                               month: "2-digit",
@@ -702,26 +798,35 @@ export function StockTableClient({
                               minute: "2-digit",
                             })}
                           </td>
-                          <td className="px-3 py-3 text-right whitespace-nowrap">
+                          <td className="whitespace-nowrap px-3 py-3 text-right">
                             <span
                               className={`font-semibold ${
-                                m.quantityChange > 0 ? "text-emerald-600" : "text-rose-600"
+                                m.quantityChange > 0
+                                  ? "text-emerald-600"
+                                  : "text-rose-600"
                               }`}
                             >
                               {m.quantityChange > 0 ? "+" : ""}
                               {m.quantityChange.toString()}
                             </span>
                           </td>
-                          <td className="px-3 py-3 text-right font-mono text-slate-500 whitespace-nowrap">
-                            {m.stockBefore.toString()} → {m.stockAfter.toString()}
+                          <td className="whitespace-nowrap px-3 py-3 text-right font-mono text-slate-500">
+                            {m.stockBefore.toString()} →{" "}
+                            {m.stockAfter.toString()}
                           </td>
                           <td className="px-3 py-3 font-semibold text-slate-600">
                             {getMovementTypeLabel(m.movementType)}
                           </td>
-                          <td className="px-4 py-3 text-slate-500 max-w-[200px] truncate" title={m.reason + (m.orderNumber ? ` • ${m.orderNumber}` : "")}>
+                          <td
+                            className="max-w-[200px] truncate px-4 py-3 text-slate-500"
+                            title={
+                              m.reason +
+                              (m.orderNumber ? ` • ${m.orderNumber}` : "")
+                            }
+                          >
                             {m.reason}
                             {m.orderNumber && (
-                              <span className="inline-flex items-center ml-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                              <span className="ml-1 inline-flex items-center rounded-full border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[9px] font-semibold text-blue-700">
                                 {m.orderNumber}
                               </span>
                             )}
@@ -735,10 +840,10 @@ export function StockTableClient({
             </div>
 
             {/* Modal Footer */}
-            <div className="border-t border-slate-100 px-6 py-4 flex items-center justify-end bg-slate-50 shrink-0">
+            <div className="flex shrink-0 items-center justify-end border-t border-slate-100 bg-slate-50 px-6 py-4">
               <button
                 onClick={() => setHistoryVariant(null)}
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 shadow-sm transition"
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
               >
                 Close
               </button>

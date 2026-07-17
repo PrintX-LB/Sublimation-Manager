@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { WorkflowHeader } from "@/components/admin/workflow-header";
 import { prisma } from "@/lib/db/prisma";
+import { orderItemReference } from "@/lib/orders/item-reference";
 import { printSheetFileExists } from "@/lib/print-sheet-library";
 import {
   cancelPrintSheetAction,
@@ -48,7 +49,9 @@ export default async function PrintSheetDetailPage({
   const orders = Array.from(
     new Map(sheet.slots.map((slot) => [slot.orderId, slot.order])).values(),
   );
-  const activeSlots = sheet.slots.filter((slot) => slot.assignmentState === "ACTIVE" && slot.productionAttemptId);
+  const activeSlots = sheet.slots.filter(
+    (slot) => slot.assignmentState === "ACTIVE" && slot.productionAttemptId,
+  );
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <WorkflowHeader
@@ -93,7 +96,7 @@ export default async function PrintSheetDetailPage({
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium">
-                      Slot {slot.slotNumber} · {slot.order.orderNumber}
+                      Slot {slot.slotNumber} · {orderItemReference(slot.order.orderNumber, slot.orderItem?.itemSequence ?? 1)}
                     </span>
                     <Link
                       href={`/orders/${slot.orderId}`}
@@ -120,11 +123,33 @@ export default async function PrintSheetDetailPage({
             <h2 className="font-semibold">Assignment history</h2>
             <div className="mt-3 space-y-2 text-xs">
               {sheet.slots.map((slot) => (
-                <div key={slot.id} className={`rounded border p-2 ${slot.assignmentState === "ACTIVE" ? "border-emerald-500/40 bg-emerald-500/5" : "border-slate-800"}`}>
-                  <div className="flex justify-between gap-2"><span>Slot {slot.slotNumber} · {slot.productionAttempt ? `Attempt ${slot.productionAttempt.attemptNumber}` : "Artwork-only assignment"}</span><span>{slot.assignmentState}</span></div>
-                  <p className="mt-1 text-slate-500">Assigned {slot.assignedAt.toLocaleString("en-GB")}{slot.releasedAt ? ` · Released ${slot.releasedAt.toLocaleString("en-GB")}` : ""}</p>
-                  {slot.releaseReason ? <p className="mt-1 text-slate-500">{slot.releaseReason}</p> : null}
-                  {slot.supersedingSheetId ? <p className="mt-1 text-slate-500">Superseded by a regenerated sheet</p> : null}
+                <div
+                  key={slot.id}
+                  className={`rounded border p-2 ${slot.assignmentState === "ACTIVE" ? "border-emerald-500/40 bg-emerald-500/5" : "border-slate-800"}`}
+                >
+                  <div className="flex justify-between gap-2">
+                    <span>
+                      Slot {slot.slotNumber} ·{" "}
+                      {slot.productionAttempt
+                      ? `${orderItemReference(slot.order.orderNumber, slot.orderItem?.itemSequence ?? 1)} · Attempt ${slot.productionAttempt.attemptNumber}`
+                        : "Artwork-only assignment"}
+                    </span>
+                    <span>{slot.assignmentState}</span>
+                  </div>
+                  <p className="mt-1 text-slate-500">
+                    Assigned {slot.assignedAt.toLocaleString("en-GB")}
+                    {slot.releasedAt
+                      ? ` · Released ${slot.releasedAt.toLocaleString("en-GB")}`
+                      : ""}
+                  </p>
+                  {slot.releaseReason ? (
+                    <p className="mt-1 text-slate-500">{slot.releaseReason}</p>
+                  ) : null}
+                  {slot.supersedingSheetId ? (
+                    <p className="mt-1 text-slate-500">
+                      Superseded by a regenerated sheet
+                    </p>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -156,6 +181,10 @@ export default async function PrintSheetDetailPage({
                 </dd>
               </div>
               <div className="flex justify-between">
+                <dt className="text-slate-500">Cut marks</dt>
+                <dd>{sheet.cutMarkMode === "CORNER_MARKS" ? "Corner marks" : sheet.cutMarkMode === "NONE" ? "None" : "Full outline"}</dd>
+              </div>
+              <div className="flex justify-between">
                 <dt className="text-slate-500">File</dt>
                 <dd
                   className={available ? "text-emerald-300" : "text-rose-300"}
@@ -184,10 +213,30 @@ export default async function PrintSheetDetailPage({
                 </button>
               </form>
             ) : null}
-            {sheet.status !== "PRINTED" && sheet.status !== "CANCELLED" ? <CancelControls sheetId={sheet.id} sheetNumber={sheet.sheetNumber ?? "Generated sheet"} cancelAction={cancelPrintSheetAction} cancelAndReleaseAction={cancelPrintSheetAndReleaseAction} /> : null}
-            {sheet.status === "PRINTED" ? <p className="rounded border border-slate-700 p-2 text-xs text-slate-400">Use Record Incident &amp; Reprint to replace attempts from a printed sheet.</p> : null}
-          {activeSlots.length && sheet.status !== "PRINTED" ? (
-              <ReleaseConfirmation sheetId={sheet.id} sheetNumber={sheet.sheetNumber ?? "Generated sheet"} status={sheet.status} orderSummary={orders.map((order) => order.orderNumber).join(", ")} action={releaseAttemptsBackToQueueAction} />
+            {sheet.status !== "PRINTED" && sheet.status !== "CANCELLED" ? (
+              <CancelControls
+                sheetId={sheet.id}
+                sheetNumber={sheet.sheetNumber ?? "Generated sheet"}
+                cancelAction={cancelPrintSheetAction}
+                cancelAndReleaseAction={cancelPrintSheetAndReleaseAction}
+              />
+            ) : null}
+            {sheet.status === "PRINTED" ? (
+              <p className="rounded border border-slate-700 p-2 text-xs text-slate-400">
+                Use Record Incident &amp; Reprint to replace attempts from a
+                printed sheet.
+              </p>
+            ) : null}
+            {activeSlots.length && sheet.status !== "PRINTED" ? (
+              <ReleaseConfirmation
+                sheetId={sheet.id}
+                sheetNumber={sheet.sheetNumber ?? "Generated sheet"}
+                status={sheet.status}
+                orderSummary={orders
+                  .map((order) => order.orderNumber)
+                  .join(", ")}
+                action={releaseAttemptsBackToQueueAction}
+              />
             ) : null}
             {!available ? (
               <form action={recreatePrintSheetFileAction}>
@@ -199,6 +248,11 @@ export default async function PrintSheetDetailPage({
             ) : null}
             <form action={regeneratePhysicalPrintSheetAction}>
               <input type="hidden" name="sheetId" value={sheet.id} />
+              <input
+                type="hidden"
+                name="regenerationRequestKey"
+                value={`physical:${sheet.id}:${sheet.updatedAt.toISOString()}`}
+              />
               <button className="w-full rounded border border-slate-600 px-3 py-2 text-sm">
                 Regenerate Physical Sheet
               </button>
@@ -210,6 +264,16 @@ export default async function PrintSheetDetailPage({
           </section>
           <section className="rounded-xl border border-slate-700 bg-slate-900/70 p-4">
             <h2 className="font-semibold">Material consumption</h2>
+            {!sheet.materialConsumptions.some(
+              (consumption) =>
+                consumption.materialRoleSnapshot === "PRINT_MEDIA",
+            ) ? (
+              <div className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-sm text-amber-200">
+                No physical paper is linked to this sheet. Check that each
+                compatible product variant has one PRINT_MEDIA item configured
+                as 1 whole unit at PRINT_SHEET_GENERATION.
+              </div>
+            ) : null}
             {sheet.materialConsumptions.length ? (
               <div className="mt-3 space-y-2 text-xs">
                 {sheet.materialConsumptions.map((consumption) => (

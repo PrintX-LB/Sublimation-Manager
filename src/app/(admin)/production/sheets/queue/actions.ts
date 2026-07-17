@@ -19,12 +19,52 @@ export async function generateQueueSheetAction(formData: FormData) {
       printSheetSlots: { include: { sheet: { select: { status: true } } } },
       orderItem: {
         include: {
-          order: { select: { id: true, orderNumber: true, status: true, dueDate: true, customer: { select: { fullName: true } } } },
-          productVariant: { select: { name: true, product: { select: { printTemplate: { select: { name: true, widthMm: true, heightMm: true, dpi: true } } } } } },
+          order: {
+            select: {
+              id: true,
+              orderNumber: true,
+              status: true,
+              dueDate: true,
+              customer: { select: { fullName: true } },
+            },
+          },
+          productVariant: {
+            select: {
+              name: true,
+              product: {
+                select: {
+                  printTemplate: {
+                    select: {
+                      name: true,
+                      widthMm: true,
+                      heightMm: true,
+                      dpi: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
           artworkProject: {
             include: {
-              template: { select: { name: true, widthMm: true, heightMm: true, dpi: true } },
-              versions: { orderBy: { version: "desc" }, select: { id: true, printReadyPath: true, editedPath: true, widthPx: true, heightPx: true } },
+              template: {
+                select: {
+                  name: true,
+                  widthMm: true,
+                  heightMm: true,
+                  dpi: true,
+                },
+              },
+              versions: {
+                orderBy: { version: "desc" },
+                select: {
+                  id: true,
+                  printReadyPath: true,
+                  editedPath: true,
+                  widthPx: true,
+                  heightPx: true,
+                },
+              },
             },
           },
         },
@@ -101,8 +141,13 @@ export async function generateQueueSheetAction(formData: FormData) {
   if (attempt2) generation.set("attempt2", attempt2);
   generation.set("includeStrips", "on");
   generation.set("includeContour", "on");
+  generation.set("cutMarkMode", "CORNER_MARKS");
+  generation.set(
+    "generationRequestKey",
+    String(formData.get("generationRequestKey") ?? ""),
+  );
   await generateManualSheetAction(generation);
   revalidatePath("/production/sheets/queue");
   revalidatePath("/production/sheets");
-  redirect("/production/sheets/queue?generated=1");
+  redirect("/production/sheets?view=automatic&generated=1");
 }

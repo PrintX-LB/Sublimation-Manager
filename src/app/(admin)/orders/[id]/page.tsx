@@ -2,7 +2,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import {
-  AlertTriangle,
   ArrowRight,
   CheckCircle2,
   FileText,
@@ -20,9 +19,9 @@ import { ORDER_STATUSES } from "@/lib/orders/status";
 import { orderIdSchema } from "@/lib/validation/order";
 import { formatUSD } from "@/lib/money";
 import { getAdminSession } from "@/lib/admin-session";
+import { orderItemReference } from "@/lib/orders/item-reference";
 import {
   addPaymentAction,
-  convertCancelledTestOrderToDraftAction,
   markFullyPaidAction,
   permanentlyDeleteTestOrderAction,
   transitionOrderAction,
@@ -104,22 +103,9 @@ export default async function OrderDetailPage({
     );
   const reasons = [
     !order.isTestOrder ? "Order is not marked as a test order" : null,
-    order.status !== "Draft" ? "Status is not Draft" : null,
-    order.payments.length > 0 ? "Payment records exist" : null,
-    order.stockCommitted ? "Stock is committed" : null,
-    order.stockMovements.length > 0 ||
-    order.items.some((item) => item.stockMovements.length > 0)
-      ? "Stock movement history exists"
-      : null,
+    order.payments.length > 0 ? "Payment records will be removed with this purge" : null,
+    order.stockCommitted ? "Stock is committed (history is retained; stock is not restored)" : null,
   ].filter((reason): reason is string => Boolean(reason));
-  const eligible = reasons.length === 0;
-  const conversionEligible =
-    order.isTestOrder &&
-    order.status === "Cancelled" &&
-    order.payments.length === 0 &&
-    !order.stockCommitted &&
-    order.stockMovements.length === 0 &&
-    !order.items.some((item) => item.stockMovements.length > 0);
   const timeline = [
     { label: "Order created", date: order.createdAt, icon: FileText },
     ...order.files.map((file) => ({
@@ -250,6 +236,9 @@ export default async function OrderDetailPage({
                           <h3 className="font-medium text-slate-100">
                             {item.productNameSnapshot}
                           </h3>
+                          <p className="text-xs font-semibold text-brand-200">
+                            {orderItemReference(order.orderNumber, item.itemSequence)}
+                          </p>
                           <p className="text-sm text-slate-400">
                             {item.description}
                           </p>
@@ -307,6 +296,7 @@ export default async function OrderDetailPage({
                       <ProductionIncidentButton
                         orderItemId={item.id}
                         productName={item.productNameSnapshot}
+                        itemReference={orderItemReference(order.orderNumber, item.itemSequence)}
                         wasteOptions={item.productVariant?.productionRecipe?.items.filter((line) => line.materialRole !== "BLANK_PRODUCT").map((line) => ({ inventoryItemId: line.inventoryItemId, name: line.inventoryItem.name, quantity: line.quantity.toString(), unit: line.unit, currentQuantity: line.inventoryItem.currentQuantity.toString() }))}
                         disabledReason={
                           order.status === "Cancelled"
@@ -327,7 +317,7 @@ export default async function OrderDetailPage({
                             const incident = attempt.failedIncident;
                             return (
                               <div key={attempt.id} className="flex flex-wrap items-center justify-between gap-2 rounded bg-slate-950/50 px-2 py-1.5 text-xs">
-                                <span className="text-slate-300">Attempt {attempt.attemptNumber}</span>
+                                <span className="text-slate-300">{orderItemReference(order.orderNumber, item.itemSequence)} · Attempt {attempt.attemptNumber}</span>
                                 <span className={attempt.status === "Failed" ? "text-rose-300" : "text-emerald-300"}>{attempt.status}</span>
                                 {incident ? <span className="text-slate-500">{incident.reason}</span> : null}
                                 <span className="text-slate-500">{attempt.createdAt.toLocaleDateString("en-GB")}</span>
@@ -446,61 +436,21 @@ export default async function OrderDetailPage({
           {admin ? (
             <section className="rounded-xl border border-red-500/30 bg-red-500/10 p-5">
               <h2 className="font-semibold text-red-300">Danger Zone</h2>
-              {eligible ? (
-                <>
-                  <p className="mt-2 text-sm text-red-200">
-                    This is an eligible test order. Permanent deletion cannot be
-                    undone.
-                  </p>
-                  <form
-                    action={permanentlyDeleteTestOrderAction}
-                    autoComplete="off"
-                    className="mt-4 flex flex-wrap items-end gap-2"
-                  >
-                    <div>
-                      <label className="block text-xs font-semibold text-red-200">
-                        Type {order.orderNumber} to confirm
-                      </label>
-                      <input
-                        name="deleteOrderConfirmation"
-                        autoComplete="new-password"
-                        autoCorrect="off"
-                        autoCapitalize="none"
-                        spellCheck={false}
-                        required
-                        className="mt-1 rounded border border-red-300 bg-transparent px-2 py-1 text-sm"
-                      />
-                    </div>
-                    <input type="hidden" name="orderId" value={order.id} />
-                    <button className="rounded bg-red-600 px-3 py-2 text-sm font-semibold text-white">
-                      Permanently Delete Test Order
-                    </button>
-                  </form>
-                </>
-              ) : (
-                <>
-                  <p className="mt-2 flex items-center gap-2 font-semibold text-red-200">
-                    <AlertTriangle size={16} />
-                    Permanent deletion unavailable
-                  </p>
-                  <ul className="mt-3 space-y-1 text-sm text-red-200">
-                    {reasons.map((reason) => (
-                      <li key={reason}>• {reason}</li>
-                    ))}
-                  </ul>
-                  {conversionEligible ? (
-                    <form
-                      action={convertCancelledTestOrderToDraftAction}
-                      className="mt-4"
-                    >
-                      <input type="hidden" name="orderId" value={order.id} />
-                      <button className="rounded border border-red-300 px-3 py-2 text-sm font-semibold text-red-200">
-                        Convert Cancelled Test Order to Draft
-                      </button>
-                    </form>
-                  ) : null}
-                </>
-              )}
+              <p className="mt-2 text-sm text-red-200">Admin Mode grants permission to permanently remove this order at any status. This cannot be undone.</p>
+              <ul className="mt-3 space-y-1 text-sm text-red-200">
+                <li>• Order records, items, payments and attached files will be removed.</li>
+                <li>• Shared generated sheets remain; only this order&apos;s slot is removed.</li>
+                <li>• Inventory and material history remains, detached from the deleted order.</li>
+              </ul>
+              {reasons.length ? <p className="mt-3 text-xs text-red-200">{reasons.join(" · ")}</p> : null}
+              <form action={permanentlyDeleteTestOrderAction} autoComplete="off" className="mt-4 flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-red-200">Type {order.orderNumber} to confirm</label>
+                  <input name="deleteOrderConfirmation" autoComplete="new-password" autoCorrect="off" autoCapitalize="none" spellCheck={false} required className="mt-1 rounded border border-red-300 bg-transparent px-2 py-1 text-sm" />
+                </div>
+                <input type="hidden" name="orderId" value={order.id} />
+                <button className="rounded bg-red-600 px-3 py-2 text-sm font-semibold text-white">Delete Order Permanently</button>
+              </form>
             </section>
           ) : null}
         </main>

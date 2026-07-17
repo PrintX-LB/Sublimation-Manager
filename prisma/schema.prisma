@@ -54,6 +54,10 @@ model PrintTemplate {
   bleedMm   Decimal  @default(0)
   filePath  String?
   notes     String?
+  cutMarkMode String @default("CORNER_MARKS")
+  cutMarkLengthMm Decimal @default(8)
+  cutMarkOffsetMm Decimal @default(3)
+  cutMarkThicknessMm Decimal @default(0.3)
   products  Product[]
   artworkProjects ArtworkProject[]
   createdAt DateTime  @default(now())
@@ -285,6 +289,7 @@ model AdminAuditLog {
 model OrderItem {
   id                   String          @id @default(uuid())
   orderId              String
+  itemSequence         Int             @default(1)
   productVariantId     String?
   description          String
   productNameSnapshot  String
@@ -311,6 +316,7 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productVariantId])
+  @@unique([orderId, itemSequence])
 }
 
 model ArtworkProject {
@@ -362,6 +368,10 @@ model PrintSheet {
   regenerationRequestKey String? @unique
   regenerationNumber Int @default(0)
   notes       String?
+  cutMarkMode String @default("FULL_OUTLINE")
+  cutMarkLengthMm Decimal @default(8)
+  cutMarkOffsetMm Decimal @default(3)
+  cutMarkThicknessMm Decimal @default(0.3)
   createdAt   DateTime @default(now())
   slots       PrintSheetSlot[]
   materialConsumptions ProductionMaterialConsumption[]

@@ -18,9 +18,7 @@ const navigation = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/orders", label: "Orders", icon: ShoppingCart },
   { href: "/production", label: "Production", icon: ClipboardList },
-  { href: "/production/sheet-builder", label: "Print Sheet Builder", icon: FileImage },
-  { href: "/production/sheets", label: "Generated Sheets", icon: FileImage },
-  { href: "/production/sheets/queue", label: "Sheet Pairing Queue", icon: FileImage },
+  { href: "/production/sheets", label: "Print Sheets", icon: FileImage },
   { href: "/customers", label: "Customers", icon: Users },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/revenue", label: "Revenue", icon: TrendingUp },
@@ -65,7 +63,11 @@ export function Sidebar({
         </div>
         <nav aria-label="Administration" className="flex-1 space-y-1.5 p-4">
           {navigation.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href;
+            const active =
+              href === "/production/sheets"
+                ? pathname.startsWith("/production/sheets") ||
+                  pathname.startsWith("/production/sheet-builder")
+                : pathname === href;
             return (
               <Link
                 key={href}

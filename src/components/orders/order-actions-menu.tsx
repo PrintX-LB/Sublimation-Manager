@@ -41,7 +41,7 @@ export function OrderActionsMenu({
 
   const isCancelled = order.status === "Cancelled";
   const isCompleted = order.status === "Completed" || order.status === "Delivered";
-  const eligible = Boolean(adminUnlocked && order.isTestOrder && order.paymentState === "unpaid" && !order.stockCommitted && !order.hasStockHistory);
+  const canPermanentlyDelete = Boolean(adminUnlocked);
 
   return (
     <div className="relative inline-block text-left" ref={ref}>
@@ -113,7 +113,7 @@ export function OrderActionsMenu({
             </button>
           </form>
 
-          {eligible ? <form action={permanentlyDeleteTestOrderAction} autoComplete="off" onSubmit={(event) => { const confirmation = window.prompt(`Permanently delete ${order.orderNumber}? Type the exact order number to confirm.`); if (confirmation !== order.orderNumber) event.preventDefault(); else setOpen(false); }}><input type="hidden" name="orderId" value={order.id}/><input type="hidden" name="deleteOrderConfirmation" autoComplete="new-password" value={order.orderNumber}/><button type="submit" className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50"><XCircle size={14}/>Permanently Delete Test Order</button></form> : null}
+          {canPermanentlyDelete ? <form action={permanentlyDeleteTestOrderAction} autoComplete="off" onSubmit={(event) => { const confirmation = window.prompt(`Permanently delete ${order.orderNumber}? Type the exact order number to confirm.`); if (confirmation !== order.orderNumber) event.preventDefault(); else setOpen(false); }}><input type="hidden" name="orderId" value={order.id}/><input type="hidden" name="deleteOrderConfirmation" autoComplete="new-password" value={order.orderNumber}/><button type="submit" className="flex w-full items-center gap-2 px-3 py-2 text-left text-red-600 hover:bg-red-50"><XCircle size={14}/>Delete Order Permanently</button></form> : null}
 
           {/* Change status action (if not cancelled) */}
           {!isCancelled && (

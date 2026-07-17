@@ -96,7 +96,7 @@ export function ArtworkEditorShell({
   const persistImage = async (file: File) => { const form = new FormData(); form.set("orderItemId", orderItemId); form.set("file", file); const relative = await uploadArtworkLayerAction(form); return `/api/local-files?path=${encodeURIComponent(relative)}`; };
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       {/* Export status banner */}
       {exportStatus === "saving" && (
         <div className="flex items-center gap-2 rounded-xl bg-amber-500/10 border border-amber-500/20 px-4 py-2.5 text-sm font-semibold text-amber-400">
@@ -115,6 +115,7 @@ export function ArtworkEditorShell({
         </div>
       )}
 
+      <div className="min-h-0 flex-1">
       <ArtworkEditor
         src={src}
         width={width}
@@ -128,6 +129,7 @@ export function ArtworkEditorShell({
         onSave={handleSave}
         onPersistImage={persistImage}
       />
+      </div>
     </div>
   );
 }

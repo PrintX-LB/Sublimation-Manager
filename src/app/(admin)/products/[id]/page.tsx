@@ -58,7 +58,7 @@ export default async function ProductDetailPage({
               <tr>
                 <th className="px-5 py-3">Variant</th>
                 <th>Price</th>
-                <th>Cost</th>
+                <th>Blank cost</th>
                 <th>Profit / margin</th>
                 <th>Stock</th>
                 <th>Consumes</th>

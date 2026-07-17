@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { mirrorArtworkForSheet } from "./production-sheet-render";
+import { cutMarksSvg, mirrorArtworkForSheet } from "./production-sheet-render";
 
 describe("production sheet artwork rendering", () => {
   it("mirrors only the artwork bitmap and preserves its dimensions", async () => {
@@ -24,5 +24,20 @@ describe("production sheet artwork rendering", () => {
     // The blue left edge must be on the right edge after the flip.
     expect(Array.from(result.data.subarray((result.info.width - 1) * 4, result.info.width * 4))).toEqual([0, 0, 255, 255]);
     expect(Array.from(result.data.subarray(0, 4))).toEqual([255, 0, 0, 255]);
+  });
+
+  it("renders four corner groups per occupied transfer without full-length lines", () => {
+    const one = cutMarksSvg({ mode: "CORNER_MARKS", lengthMm: 8, offsetMm: 3, thicknessMm: 0.3 }, 1);
+    const two = cutMarksSvg({ mode: "CORNER_MARKS", lengthMm: 8, offsetMm: 3, thicknessMm: 0.3 }, 2);
+    expect(one?.toString()).toContain('width="2480"');
+    expect((one?.toString().match(/<line /g) ?? []).length).toBe(8);
+    expect((two?.toString().match(/<line /g) ?? []).length).toBe(16);
+    expect(cutMarksSvg({ mode: "NONE" }, 2)).toBeNull();
+  });
+
+  it("keeps full-outline compatibility and converts physical settings at DPI", () => {
+    const outline = cutMarksSvg({ mode: "FULL_OUTLINE", lengthMm: 8, offsetMm: 3, thicknessMm: 0.3 }, 2, 600)?.toString() ?? "";
+    expect((outline.match(/<line /g) ?? []).length).toBe(8);
+    expect(outline).toContain('stroke-width="7"');
   });
 });

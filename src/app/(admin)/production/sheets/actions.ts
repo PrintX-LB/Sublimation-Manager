@@ -5,13 +5,14 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { prisma } from "@/lib/db/prisma";
+import { orderItemReference } from "@/lib/orders/item-reference";
 import {
   copyPrintSheetFile,
   nextPrintSheetNumber,
   resolvePrintSheetPath,
 } from "@/lib/print-sheet-library";
 import { nextSheetFilename } from "@/lib/production-sheet";
-import { consumeRecipeStage } from "@/lib/production/recipes";
+import { consumePhysicalPrintSheet } from "@/lib/production/recipes";
 import {
   composeA4PrintSheet,
   mirrorArtworkForSheet,
@@ -59,14 +60,39 @@ async function lifecycle(
 
 async function releaseSheetAttempts(sheetIdValue: string, reason: string) {
   return prisma.$transaction(async (tx) => {
-    const sheet = await tx.printSheet.findUnique({ where: { id: sheetIdValue }, include: { slots: true } });
+    const sheet = await tx.printSheet.findUnique({
+      where: { id: sheetIdValue },
+      include: { slots: true },
+    });
     if (!sheet) throw new Error("SHEET_NOT_FOUND");
-    if (sheet.status === "PRINTED") throw new Error("PRINTED_SHEET_USE_INCIDENT_REPRINT");
-    const active = sheet.slots.filter((slot) => slot.assignmentState === "ACTIVE" && slot.productionAttemptId);
+    if (sheet.status === "PRINTED")
+      throw new Error("PRINTED_SHEET_USE_INCIDENT_REPRINT");
+    const active = sheet.slots.filter(
+      (slot) => slot.assignmentState === "ACTIVE" && slot.productionAttemptId,
+    );
     if (!active.length) return 0;
-    await tx.printSheetSlot.updateMany({ where: { sheetId: sheet.id, assignmentState: "ACTIVE" }, data: { assignmentState: "RELEASED", releasedAt: new Date(), releaseReason: reason } });
-    await tx.productionAttempt.updateMany({ where: { id: { in: active.flatMap((slot) => slot.productionAttemptId ? [slot.productionAttemptId] : []) }, status: { not: "Failed" } }, data: { status: "Ready to Print" } });
-    await tx.printSheetEvent.create({ data: { sheetId: sheet.id, eventType: "ATTEMPTS_RELEASED", note: reason } });
+    await tx.printSheetSlot.updateMany({
+      where: { sheetId: sheet.id, assignmentState: "ACTIVE" },
+      data: {
+        assignmentState: "RELEASED",
+        releasedAt: new Date(),
+        releaseReason: reason,
+      },
+    });
+    await tx.productionAttempt.updateMany({
+      where: {
+        id: {
+          in: active.flatMap((slot) =>
+            slot.productionAttemptId ? [slot.productionAttemptId] : [],
+          ),
+        },
+        status: { not: "Failed" },
+      },
+      data: { status: "Ready to Print" },
+    });
+    await tx.printSheetEvent.create({
+      data: { sheetId: sheet.id, eventType: "ATTEMPTS_RELEASED", note: reason },
+    });
     return active.length;
   });
 }
@@ -88,25 +114,68 @@ export async function cancelPrintSheetAction(formData: FormData) {
 export async function cancelPrintSheetAndReleaseAction(formData: FormData) {
   const value = sheetId(formData);
   await prisma.$transaction(async (tx) => {
-    const sheet = await tx.printSheet.findUnique({ where: { id: value }, include: { slots: true } });
+    const sheet = await tx.printSheet.findUnique({
+      where: { id: value },
+      include: { slots: true },
+    });
     if (!sheet) throw new Error("SHEET_NOT_FOUND");
-    if (sheet.status === "PRINTED") throw new Error("PRINTED_SHEET_CANNOT_BE_CANCELLED");
-    await tx.printSheet.update({ where: { id: value }, data: { status: "CANCELLED", cancelledAt: new Date() } });
-    const activeIds = sheet.slots.filter((slot) => slot.assignmentState === "ACTIVE" && slot.productionAttemptId).map((slot) => slot.productionAttemptId!);
+    if (sheet.status === "PRINTED")
+      throw new Error("PRINTED_SHEET_CANNOT_BE_CANCELLED");
+    await tx.printSheet.update({
+      where: { id: value },
+      data: { status: "CANCELLED", cancelledAt: new Date() },
+    });
+    const activeIds = sheet.slots
+      .filter(
+        (slot) => slot.assignmentState === "ACTIVE" && slot.productionAttemptId,
+      )
+      .map((slot) => slot.productionAttemptId!);
     if (activeIds.length) {
-      await tx.printSheetSlot.updateMany({ where: { sheetId: value, assignmentState: "ACTIVE" }, data: { assignmentState: "RELEASED", releasedAt: new Date(), releaseReason: "Cancelled and released by operator" } });
-      await tx.productionAttempt.updateMany({ where: { id: { in: activeIds }, status: { not: "Failed" } }, data: { status: "Ready to Print" } });
+      await tx.printSheetSlot.updateMany({
+        where: { sheetId: value, assignmentState: "ACTIVE" },
+        data: {
+          assignmentState: "RELEASED",
+          releasedAt: new Date(),
+          releaseReason: "Cancelled and released by operator",
+        },
+      });
+      await tx.productionAttempt.updateMany({
+        where: { id: { in: activeIds }, status: { not: "Failed" } },
+        data: { status: "Ready to Print" },
+      });
     }
-    await tx.printSheetEvent.create({ data: { sheetId: value, eventType: "CANCELLED", note: "Sheet cancelled and attempts released; inventory was not restored." } });
-    if (activeIds.length) await tx.printSheetEvent.create({ data: { sheetId: value, eventType: "ATTEMPTS_RELEASED", note: "Attempts released as part of cancellation." } });
+    await tx.printSheetEvent.create({
+      data: {
+        sheetId: value,
+        eventType: "CANCELLED",
+        note: "Sheet cancelled and attempts released; inventory was not restored.",
+      },
+    });
+    if (activeIds.length)
+      await tx.printSheetEvent.create({
+        data: {
+          sheetId: value,
+          eventType: "ATTEMPTS_RELEASED",
+          note: "Attempts released as part of cancellation.",
+        },
+      });
   });
-  revalidatePath("/production/sheets"); revalidatePath("/production/sheets/queue"); revalidatePath(`/production/sheets/${value}`); redirect(`/production/sheets/${value}?saved=cancelled-released`);
+  revalidatePath("/production/sheets");
+  revalidatePath("/production/sheets/queue");
+  revalidatePath(`/production/sheets/${value}`);
+  redirect(`/production/sheets/${value}?saved=cancelled-released`);
 }
 
 export async function releaseAttemptsBackToQueueAction(formData: FormData) {
-  const value = sheetId(formData); const reason = String(formData.get("releaseReason") ?? "Released by operator").trim() || "Released by operator";
+  const value = sheetId(formData);
+  const reason =
+    String(formData.get("releaseReason") ?? "Released by operator").trim() ||
+    "Released by operator";
   await releaseSheetAttempts(value, reason);
-  revalidatePath("/production/sheets"); revalidatePath("/production/sheets/queue"); revalidatePath(`/production/sheets/${value}`); redirect(`/production/sheets/${value}?saved=released`);
+  revalidatePath("/production/sheets");
+  revalidatePath("/production/sheets/queue");
+  revalidatePath(`/production/sheets/${value}`);
+  redirect(`/production/sheets/${value}?saved=released`);
 }
 
 export async function recreatePrintSheetFileAction(formData: FormData) {
@@ -163,7 +232,7 @@ export async function recreatePrintSheetFileAction(formData: FormData) {
       .sort((a, b) => a.slotNumber - b.slotNumber)
       .map((slot, index) =>
         Buffer.from(
-          `<svg width="${sheet.widthPx}" height="${Math.round(sheet.heightPx / 3.1)}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><rect x="2" y="2" width="${sheet.widthPx - 4}" height="${Math.round(sheet.heightPx / 3.1) - 4}" fill="none" stroke="black" stroke-width="3"/><g fill="black" font-family="Arial" font-size="36"><text x="34" y="65">${slot.order.orderNumber}</text><text x="34" y="115">${slot.order.customer.fullName}</text><text x="34" y="165">${slot.orderItem?.productNameSnapshot ?? "Artwork"}</text><text x="34" y="215">Transfer ${index + 1} of 2</text></g></svg>`,
+      `<svg width="${sheet.widthPx}" height="${Math.round(sheet.heightPx / 3.1)}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><rect x="2" y="2" width="${sheet.widthPx - 4}" height="${Math.round(sheet.heightPx / 3.1) - 4}" fill="none" stroke="black" stroke-width="3"/><g fill="black" font-family="Arial" font-size="36"><text x="34" y="65">${orderItemReference(slot.order.orderNumber, slot.orderItem?.itemSequence ?? 1)}</text><text x="34" y="115">${slot.order.customer.fullName}</text><text x="34" y="165">${slot.orderItem?.productNameSnapshot ?? "Artwork"}</text><text x="34" y="215">Transfer ${index + 1} of 2</text></g></svg>`,
         ),
       );
     const { writeFile } = await import("node:fs/promises");
@@ -172,6 +241,8 @@ export async function recreatePrintSheetFileAction(formData: FormData) {
       await composeA4PrintSheet(
         [artwork[0]!, artwork[1]!],
         [strips[0]!, strips[1]!],
+        { mode: sheet.cutMarkMode as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE", lengthMm: Number(sheet.cutMarkLengthMm), offsetMm: Number(sheet.cutMarkOffsetMm), thicknessMm: Number(sheet.cutMarkThicknessMm) },
+        sheet.slots.length,
       ),
       { flag: "wx" },
     );
@@ -269,24 +340,25 @@ export async function regeneratePhysicalPrintSheetAction(formData: FormData) {
     for (const slot of source.slots) {
       if (slot.productionAttemptId) {
         await tx.printSheetSlot.update({
-          where: { sheetId_slotNumber: { sheetId: next.id, slotNumber: slot.slotNumber } },
+          where: {
+            sheetId_slotNumber: {
+              sheetId: next.id,
+              slotNumber: slot.slotNumber,
+            },
+          },
           data: { productionAttemptId: slot.productionAttemptId },
         });
       }
     }
-    for (const [index, slot] of source.slots.entries()) {
-      if (!slot.orderItem?.productVariantId) continue;
-      await consumeRecipeStage(tx, {
-        productVariantId: slot.orderItem.productVariantId,
-        stage: "PRINT_SHEET_GENERATION",
-        multiplier: "1",
+    const materialResult = await consumePhysicalPrintSheet(tx, {
+      printSheetId: next.id,
+      slots: source.slots.map((slot) => ({
+        productVariantId: slot.orderItem?.productVariantId ?? "",
         orderId: slot.orderId,
         orderItemId: slot.orderItemId ?? undefined,
-        printSheetId: next.id,
-        idempotencyPrefix: `sheet:${next.id}:slot:${index + 1}`,
-        excludeRoles: index > 0 ? ["PRINT_MEDIA"] : undefined,
-      });
-    }
+        productionAttemptId: slot.productionAttemptId ?? undefined,
+      })),
+    });
     await tx.printSheet.update({
       where: { id: source.id },
       data: { updatedAt: new Date(), regenerationNumber: { increment: 1 } },
@@ -296,7 +368,9 @@ export async function regeneratePhysicalPrintSheetAction(formData: FormData) {
         sheetId: next.id,
         eventType: "REGENERATED_PHYSICAL",
         relatedSheetId: source.id,
-        note: "New physical sheet created and print-stage materials consumed once.",
+        note: materialResult.warnings.length
+          ? `New physical sheet created. ${materialResult.warnings.join(" ")}`
+          : "New physical sheet created and print-stage materials consumed once.",
       },
     });
     return next;

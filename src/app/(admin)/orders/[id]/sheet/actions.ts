@@ -8,8 +8,9 @@ import sharp from "sharp";
 import { prisma } from "@/lib/db/prisma";
 import { A4_SHEET, SHEET_LAYOUT, nextSheetFilename, sheetLayout } from "@/lib/production-sheet";
 import { getPrintSheetBuilderFolder } from "@/lib/order-storage";
-import { mirrorArtworkForSheet } from "@/lib/production-sheet-render";
+import { cutMarksSvg, mirrorArtworkForSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-render";
 import { nextPrintSheetNumber } from "@/lib/print-sheet-library";
+import { orderItemReference } from "@/lib/orders/item-reference";
 
 function text(value: unknown) { return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character); }
 
@@ -23,9 +24,11 @@ export async function createA4PrintSheetAction(formData: FormData) {
   const firstVersionId = String(formData.get("firstVersionId") ?? "");
   const secondVersionId = String(formData.get("secondVersionId") ?? "");
   const includeStrips = String(formData.get("includeStrips") ?? "on") === "on";
-  const includeContour = String(formData.get("includeContour") ?? "off") === "on";
+  const requestedCutMarkMode = String(formData.get("cutMarkMode") ?? "").trim();
+  const includeContour = String(formData.get("includeContour") ?? "off") === "on" || (requestedCutMarkMode && requestedCutMarkMode !== "NONE");
+  if (requestedCutMarkMode && !["NONE", "CORNER_MARKS", "FULL_OUTLINE"].includes(requestedCutMarkMode)) throw new Error("INVALID_CUT_MARK_SETTINGS");
   const filenameInput = String(formData.get("filename") ?? "").trim();
-  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { customer: true, items: { include: { productVariant: true, artworkProject: { include: { versions: true } } } } } });
+  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { customer: true, items: { include: { productVariant: { include: { product: { include: { printTemplate: true } } } }, artworkProject: { include: { versions: true } } } } } });
   if (!order) throw new Error("ORDER_NOT_FOUND");
   const versions = order.items.flatMap((item) => (item.artworkProject?.versions ?? []).map((version) => ({ version, item })));
   const selected = [firstVersionId, secondVersionId].map((id) => versions.find((entry) => entry.version.id === id)).filter((entry): entry is (typeof versions)[number] => Boolean(entry));
@@ -33,6 +36,13 @@ export async function createA4PrintSheetAction(formData: FormData) {
   const first = selected[0];
   const second = selected[1];
   if (!first || !second) throw new Error("SELECT_TWO_ARTWORK_VERSIONS");
+  const template = first.item.productVariant?.product.printTemplate;
+  const cutMarks = normalizeCutMarkSettings({
+    mode: (requestedCutMarkMode || (includeContour ? "FULL_OUTLINE" : "NONE")) as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE",
+    lengthMm: Number(template?.cutMarkLengthMm ?? 8),
+    offsetMm: Number(template?.cutMarkOffsetMm ?? 3),
+    thicknessMm: Number(template?.cutMarkThicknessMm ?? 0.3),
+  });
 
   const printSheetsBase = await getPrintSheetBuilderFolder();
   const orderFolder = path.join(
@@ -47,7 +57,7 @@ export async function createA4PrintSheetAction(formData: FormData) {
   if (path.basename(path.dirname(path.dirname(sourceResolved))) !== order.orderNumber) throw new Error("INVALID_ARTWORK_PATH");
   await mkdir(orderFolder, { recursive: true });
   const existing = await readdir(orderFolder).catch(() => [] as string[]);
-  const filename = nextSheetFilename(filenameInput || `A4_${order.orderNumber}_mugs_1-2.png`, existing);
+  const filename = nextSheetFilename(filenameInput || `A4_${orderItemReference(order.orderNumber, first.item.itemSequence)}_${orderItemReference(order.orderNumber, second.item.itemSequence)}.png`, existing);
   const images = await Promise.all(selected.map(async ({ version }) => {
     const relative = (includeContour ? version.printReadyPath : version.editedPath) || version.printReadyPath || version.editedPath;
     const resolved = path.resolve(process.cwd(), relative);
@@ -72,12 +82,14 @@ export async function createA4PrintSheetAction(formData: FormData) {
     if (!stripOne || !stripTwo) throw new Error("SELECT_TWO_ARTWORK_VERSIONS");
     composites.push({ input: Buffer.from(stripOne), left: 0, top: layout.strip1Y }, { input: Buffer.from(stripTwo), left: 0, top: layout.strip2Y });
   }
+  const marks = cutMarksSvg(cutMarks, selected.length, A4_SHEET.dpi);
+  if (marks) composites.push({ input: marks, left: 0, top: 0 });
   const output = await sharp({ create: { width: SHEET_LAYOUT.widthPx, height: SHEET_LAYOUT.heightPx, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).withMetadata({ density: A4_SHEET.dpi }).png().toBuffer();
   await import("node:fs/promises").then(({ writeFile }) => writeFile(path.join(orderFolder, filename), output, { flag: "wx" }));
   const relative = path.relative(process.cwd(), path.join(orderFolder, filename)).replaceAll(path.sep, "/");
   const sheet = await prisma.$transaction(async (tx) => {
     const sheetNumber = await nextPrintSheetNumber(tx);
-    const created = await tx.printSheet.create({ data: { sheetNumber, filename, storagePath: relative, widthPx: SHEET_LAYOUT.widthPx, heightPx: SHEET_LAYOUT.heightPx, dpi: A4_SHEET.dpi, status: "READY_TO_PRINT", slots: { create: selected.map(({ version, item }, index) => ({ slotNumber: index + 1, artworkVersionId: version.id, orderId, orderItemId: item.id })) } } });
+    const created = await tx.printSheet.create({ data: { sheetNumber, filename, storagePath: relative, widthPx: SHEET_LAYOUT.widthPx, heightPx: SHEET_LAYOUT.heightPx, dpi: A4_SHEET.dpi, status: "READY_TO_PRINT", cutMarkMode: cutMarks.mode, cutMarkLengthMm: cutMarks.lengthMm, cutMarkOffsetMm: cutMarks.offsetMm, cutMarkThicknessMm: cutMarks.thicknessMm, slots: { create: selected.map(({ version, item }, index) => ({ slotNumber: index + 1, artworkVersionId: version.id, orderId, orderItemId: item.id })) } } });
     await tx.printSheetEvent.create({ data: { sheetId: created.id, eventType: "GENERATED", note: "A4 sheet generated from the order workspace." } });
     return created;
   });

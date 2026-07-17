@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { PairingAttempt } from "@/lib/production/sheet-pairing";
+import { orderItemReference } from "@/lib/orders/item-reference";
 
 export function PairDraftEditor({
   first,
@@ -17,6 +18,7 @@ export function PairDraftEditor({
   const [slots, setSlots] = useState<
     [PairingAttempt | null, PairingAttempt | null]
   >([first, second]);
+  const [generationRequestKey] = useState(() => crypto.randomUUID());
   const replacementOptions = useMemo(() => {
     const used = new Set(
       slots
@@ -63,7 +65,7 @@ export function PairDraftEditor({
             {slot ? (
               <>
                 <p className="text-brand-200 text-xs font-semibold">
-                  Slot {index + 1} · {slot.orderNumber}
+                  Slot {index + 1} · {orderItemReference(slot.orderNumber, slot.itemSequence ?? 1)}
                 </p>
                 <p className="text-xs text-slate-300">
                   {slot.customerName} · {slot.productName}
@@ -79,7 +81,9 @@ export function PairDraftEditor({
               <button
                 type="button"
                 onClick={() =>
-                  setSlots((current) => index === 0 ? [current[1], null] : [current[0], null])
+                  setSlots((current) =>
+                    index === 0 ? [current[1], null] : [current[0], null],
+                  )
                 }
                 className="rounded border border-slate-700 px-2 py-1 text-[11px]"
               >
@@ -96,7 +100,7 @@ export function PairDraftEditor({
                   <option value="">Replace…</option>
                   {replacementOptions.map((candidate) => (
                     <option key={candidate.id} value={candidate.id}>
-                      {candidate.orderNumber} · {candidate.customerName}
+                      {orderItemReference(candidate.orderNumber, candidate.itemSequence ?? 1)} · {candidate.customerName}
                     </option>
                   ))}
                 </select>
@@ -111,7 +115,7 @@ export function PairDraftEditor({
                   <option value="">Add compatible transfer…</option>
                   {replacementOptions.map((candidate) => (
                     <option key={candidate.id} value={candidate.id}>
-                      {candidate.orderNumber} · {candidate.customerName}
+                      {orderItemReference(candidate.orderNumber, candidate.itemSequence ?? 1)} · {candidate.customerName}
                     </option>
                   ))}
                 </select>
@@ -121,6 +125,11 @@ export function PairDraftEditor({
         ))}
       </div>
       <input type="hidden" name="attempt1" value={slots[0]?.id ?? ""} />
+      <input
+        type="hidden"
+        name="generationRequestKey"
+        value={generationRequestKey}
+      />
       {slots[1] ? (
         <input type="hidden" name="attempt2" value={slots[1].id} />
       ) : null}

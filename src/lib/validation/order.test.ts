@@ -114,4 +114,18 @@ describe("orderInputSchema", () => {
       expect(fieldErrors.discountValue?.[0]).toBe("Use a positive currency amount");
     }
   });
+
+  it("allows a 100% order and line discount but rejects percentages above 100", () => {
+    const free = orderInputSchema.safeParse({
+      ...validOrderPayload,
+      discountType: "percentage",
+      discountValue: "100",
+      items: [{ ...validOrderPayload.items[0], discountType: "percentage", discountValue: "100" }],
+    });
+    expect(free.success).toBe(true);
+    const invalid = orderInputSchema.safeParse({ ...validOrderPayload, discountType: "percentage", discountValue: "100.01" });
+    expect(invalid.success).toBe(false);
+    const negative = orderInputSchema.safeParse({ ...validOrderPayload, discountType: "percentage", discountValue: "-1" });
+    expect(negative.success).toBe(false);
+  });
 });

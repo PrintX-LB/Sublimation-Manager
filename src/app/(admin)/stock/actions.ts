@@ -18,11 +18,11 @@ export async function adjustStockAction(formData: FormData) {
   await manualStockAdjustment(parsed.data);
   revalidatePath("/stock");
 }
-async function quantityAction(formData: FormData, sign: 1 | -1) {
+async function quantityAction(formData: FormData, sign: 1 | -1, requireReason: boolean) {
   const parsed = stockQuantitySchema.safeParse({
     variantId: formData.get("variantId"),
     amount: formData.get("amount"),
-    reason: formData.get("reason"),
+    reason: requireReason ? formData.get("reason") : String(formData.get("reason") ?? "").trim() || "Stock received",
   });
   if (!parsed.success) throw new Error("Enter a valid quantity and reason.");
   await manualStockAdjustment({
@@ -34,10 +34,10 @@ async function quantityAction(formData: FormData, sign: 1 | -1) {
   revalidatePath("/stock");
 }
 export async function addStockAction(formData: FormData) {
-  await quantityAction(formData, 1);
+  await quantityAction(formData, 1, false);
 }
 export async function removeStockAction(formData: FormData) {
-  await quantityAction(formData, -1);
+  await quantityAction(formData, -1, true);
 }
 export async function renameVariantAction(formData: FormData) {
   const parsed = renameVariantSchema.safeParse({

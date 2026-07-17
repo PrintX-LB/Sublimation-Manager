@@ -41,6 +41,7 @@ type Variant = {
 
 interface FormItem {
   variantId: string;
+  itemSequence?: number;
   quantity: number;
   discountType: "fixed" | "percentage";
   discountValue: string;
@@ -99,9 +100,11 @@ export function OrderForm({
 
   // Form states
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(() => customers.find((customer) => customer.id === defaultCustomerId) ?? null);
-  const [items, setItems] = useState<FormItem[]>([
-    initialOrder?.items[0] ?? { variantId: variants[0]?.id ?? "", quantity: 1, discountType: "fixed", discountValue: "0" },
-  ]);
+  const [items, setItems] = useState<FormItem[]>(
+    initialOrder?.items?.length
+      ? initialOrder.items
+      : [{ variantId: variants[0]?.id ?? "", quantity: 1, discountType: "fixed", discountValue: "0" }],
+  );
   const [deliveryMethod, setDeliveryMethod] = useState(initialOrder?.deliveryMethod ?? "Collection");
   const [deliveryCharge, setDeliveryCharge] = useState(initialOrder?.deliveryCharge ?? "0");
   const [discountType, setDiscountType] = useState<"fixed" | "percentage">(initialOrder?.discountType ?? "fixed");
@@ -168,7 +171,8 @@ export function OrderForm({
     <form action={formAction} onSubmit={() => setIsDirty(false)} className="mt-6">
       {/* Hidden inputs to feed FormData correctly */}
       <input type="hidden" name="items" value={JSON.stringify(items.map(item => ({
-        variantId: item.variantId,
+      variantId: item.variantId,
+        itemSequence: item.itemSequence,
         quantity: item.quantity,
         discountType: item.discountType,
         discountValue: item.discountValue
@@ -288,6 +292,7 @@ export function OrderForm({
                     ...cur,
                     {
                       variantId: variants[0]?.id ?? "",
+                      itemSequence: undefined,
                       quantity: 1,
                       discountType: "fixed",
                       discountValue: "0",
@@ -413,6 +418,10 @@ export function OrderForm({
                             <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Line Discount</span>
                             <div className="flex rounded-lg border border-slate-800 bg-[#0f172a] overflow-hidden">
                               <input
+                                type="number"
+                                min="0"
+                                max={item.discountType === "percentage" ? "100" : undefined}
+                                step={item.discountType === "percentage" ? "1" : "0.01"}
                                 value={item.discountValue}
                                 data-field={`items.${index}.discountValue`}
                                 onChange={(e) => {
@@ -593,6 +602,10 @@ export function OrderForm({
                 <div className="flex items-center justify-between gap-3"><span>Discount</span>
                 <div className="flex rounded border border-slate-800 bg-[#0f172a] overflow-hidden">
                   <input
+                    type="number"
+                    min="0"
+                    max={discountType === "percentage" ? "100" : undefined}
+                    step={discountType === "percentage" ? "1" : "0.01"}
                     name="discountValue"
                     value={discountValue}
                     onChange={(e) => setDiscountValue(e.target.value)}
@@ -609,7 +622,7 @@ export function OrderForm({
                   </select>
                 </div>
               </div>
-                <div className="flex items-center justify-between"><span>Estimated Cost</span><span className="text-right font-semibold text-slate-300">{formatUSD(estimatedCostTotal)}</span></div>
+                <div className="flex items-center justify-between"><span>Estimated blank cost</span><span className="text-right font-semibold text-slate-300">{formatUSD(estimatedCostTotal)}</span></div>
               </div>
             </div>
 

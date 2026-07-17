@@ -14,9 +14,14 @@ const nonNegativeMoney = z
 
 export const orderItemInputSchema = z.object({
   variantId: z.string().uuid("Select a product variant"),
+  itemSequence: z.coerce.number().int().positive().optional(),
   quantity: positiveInt,
   discountType: z.enum(["fixed", "percentage"]),
   discountValue: nonNegativeMoney,
+}).superRefine((value, context) => {
+  if (value.discountType === "percentage" && Number(value.discountValue) > 100) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["discountValue"], message: "Percentage discount must be between 0% and 100%" });
+  }
 });
 export const orderInputSchema = z
   .object({
@@ -69,6 +74,9 @@ export const orderInputSchema = z
         path: ["customerId"],
         message: "Choose a customer or enter a new customer name",
       });
+    if (data.discountType === "percentage" && Number(data.discountValue) > 100) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: ["discountValue"], message: "Percentage discount must be between 0% and 100%" });
+    }
   });
 export const orderIdSchema = id;
 export const statusSchema = z.enum(ORDER_STATUSES);

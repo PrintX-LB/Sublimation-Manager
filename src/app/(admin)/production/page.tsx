@@ -14,6 +14,7 @@ import {
   transitionOrderAction,
   updateOrderPriorityAction,
 } from "../orders/actions";
+import { orderItemReference } from "@/lib/orders/item-reference";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +64,7 @@ export default async function ProductionPage() {
         title="Production Board"
         description="A live workshop view of active orders."
       />
-      <div className="flex flex-wrap gap-2"><Link href="/production/recipes" className="inline-flex rounded border border-slate-700 px-3 py-2 text-xs text-brand-200">Production Recipes</Link><Link href="/production/sheets" className="inline-flex rounded border border-slate-700 px-3 py-2 text-xs text-brand-200">Generated Print Sheets</Link><Link href="/production/sheets/queue" className="inline-flex rounded border border-slate-700 px-3 py-2 text-xs text-brand-200">Automatic Pairing Queue</Link></div>
+      <div className="flex flex-wrap gap-2"><Link href="/production/recipes" className="inline-flex rounded border border-slate-700 px-3 py-2 text-xs text-brand-200">Production Recipes</Link><Link href="/production/sheets" className="inline-flex rounded border border-slate-700 px-3 py-2 text-xs text-brand-200">Print Sheets</Link></div>
       <section className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/60 p-2">
         {summaries.map(([label, value]) => (
           <div
@@ -116,6 +117,7 @@ type BoardOrder = Awaited<ReturnType<typeof prisma.order.findMany>>[number] & {
   payments: { amount: unknown }[];
   items: Array<{
     id: string;
+    itemSequence: number;
     quantity: number;
     productNameSnapshot: string;
     customerArtworkPath: string | null;
@@ -176,7 +178,7 @@ function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
       </p>
       <p className="mt-1.5 text-xs text-slate-400">
         {order.items
-          .map((item) => `${item.productNameSnapshot} ×${item.quantity}`)
+          .map((item) => `${orderItemReference(order.orderNumber, item.itemSequence)} ${item.productNameSnapshot} ×${item.quantity}`)
           .join(", ")}
       </p>
       {order.items.some((item) => item.productionAttempts.length) ? <p className="mt-1 text-[11px] text-slate-500">Attempt {order.items.find((item) => item.productionAttempts.length)?.productionAttempts[0]?.attemptNumber} · {order.items.find((item) => item.productionAttempts.length)?.productionAttempts[0]?.status}</p> : null}
@@ -262,6 +264,7 @@ function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
             key={item.id}
             orderItemId={item.id}
             productName={item.productNameSnapshot}
+            itemReference={orderItemReference(order.orderNumber, item.itemSequence)}
             disabledReason={order.status === "Completed" ? "Order is completed" : item.productVariant ? undefined : "Product is not linked to inventory"}
           />
         ))}

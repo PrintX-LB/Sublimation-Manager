@@ -25,4 +25,9 @@ describe("order totals", () => {
       total: "21.60",
     });
   });
+
+  it("clamps a 100% line and order discount to an exact zero sale total", () => {
+    expect(calculateTotals([{ quantity: 1, unitPrice: "10.00", discountType: "percentage", discountValue: "100" }], "fixed", "0", "0").total).toBe("0.00");
+    expect(calculateTotals([{ quantity: 1, unitPrice: "10.00", discountType: "fixed", discountValue: "0" }], "percentage", "100", "0").total).toBe("0.00");
+  });
 });
