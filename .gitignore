@@ -16,3 +16,5 @@ uploads/
 backups/
 print-sheets/
 test_print_sheets_base/
+desktop-dist/
+release/

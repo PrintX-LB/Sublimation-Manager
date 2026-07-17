@@ -26,6 +26,18 @@ No external account or hosted database is required. Prisma does require a local 
 
 The launcher determines the project directory from its own location, so it continues to work if the repository is moved or cloned into a different folder. It creates `.env` from `.env.example` only when `.env` does not already exist, prepares the default SQLite file and applies pending migrations without overwriting existing local configuration or data. Keep the launcher terminal open while using PrintX and press `Ctrl+C` there to stop the server.
 
+## Desktop Beta (Windows)
+
+Desktop packaging lives on the `desktop-beta` branch and does not replace browser development. The portable build wraps the same Next.js application in a secure Electron window and stores all writable data under `%LOCALAPPDATA%\PrintX`, outside the executable and application resources.
+
+```powershell
+npm run desktop:dev
+npm run desktop:pack
+npm run desktop:portable
+```
+
+`desktop:portable` produces an unsigned x64 beta executable under `release/`. The first packaged launch creates an empty SQLite database, applies the checked-in Prisma migrations, and creates isolated storage, backup, log, configuration, and temporary directories. It never packages the repository database, artwork, generated sheets, backups, or `.env` files. See `DESKTOP.md` for the data layout and testing procedure.
+
 ## Setup
 
 From the repository directory:

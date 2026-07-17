@@ -59,6 +59,14 @@ Production Recipes V1 defines staged material requirements per ProductVariant us
 4. Optional future QR workflow
 5. Freeform/variable-size nesting, roll-media optimization, printer queues and operator assignment
 
+## PrintX Desktop Beta
+
+- Electron wraps the existing self-hosted Next.js application; the browser workflow remains available.
+- Desktop work is isolated on the `desktop-beta` branch.
+- Writable SQLite, artwork, print sheets, backups, logs, configuration and temporary files live under the Windows user-data directory rather than inside the executable.
+- First launch uses an empty database and applies production Prisma migrations; real data is imported only through the existing Backup & Restore workflow.
+- The first distribution target is an unsigned Windows x64 portable executable. An NSIS installer, code signing and automatic updates remain follow-up work after portable verification.
+
 ## Deferred QR workflow
 
 QR production tickets, scanner routes, QR tokens and barcode-printer integration are intentionally deferred. They must not be added until a future milestone is approved.

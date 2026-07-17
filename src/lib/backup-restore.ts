@@ -65,6 +65,13 @@ const settingsPath = () => {
   return path.resolve(process.cwd(), "data", "backup-settings-history.json");
 };
 
+const backupRootPath = () => {
+  if (process.env.PRINTX_BACKUP_ROOT) {
+    return path.resolve(process.env.PRINTX_BACKUP_ROOT);
+  }
+  return path.resolve(process.cwd(), "data", "backups");
+};
+
 // Helper: Checksum
 export function calculateChecksum(buffer: Buffer): string {
   return createHash("sha256").update(buffer).digest("hex");
@@ -227,7 +234,7 @@ export async function createBackup(type: "manual" | "scheduled"): Promise<Backup
   const backupId = createHash("md5").update(Date.now().toString() + Math.random().toString()).digest("hex").slice(0, 16);
   const timestampStr = new Date().toISOString().replace(/[:.]/g, "-");
    const filename = `backup_${timestampStr}_${backupId}.zip`;
-  const backupDir = path.resolve(process.cwd(), "data", "backups");
+  const backupDir = backupRootPath();
   const backupFilePath = path.join(backupDir, filename);
 
   await mkdir(backupDir, { recursive: true });
