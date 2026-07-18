@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readdir, stat, readFile, writeFile, rm, rename } from "node:fs/promises";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
@@ -9,11 +9,14 @@ import os from "node:os";
 import { prisma } from "@/lib/db/prisma";
 import { getOrderStorageSettings, saveOrderStorageSettings } from "@/lib/order-storage";
 import { PrismaClient } from "@prisma/client";
+import { ADMIN_CREDENTIAL_SETTING_KEYS } from "@/lib/admin-credentials";
 const require = createRequire(import.meta.url);
 const AdmZip = require("adm-zip") as typeof import("adm-zip");
 const execFile = promisify(execFileCallback);
 type AdmZipInstance = InstanceType<typeof AdmZip>;
 type ZipEntry = ReturnType<AdmZipInstance["getEntry"]>;
+const SUPPORTED_BACKUP_VERSION = "1.0.0";
+let restoreInProgress = false;
 
 // Types
 export interface BackupSettings {
@@ -226,7 +229,9 @@ async function removeSqliteSidecars(databasePath: string) {
 
 // Helper: Get Schema Migrations
 async function getSchemaMigrations(): Promise<string[]> {
-  const migrationsPath = path.resolve(process.cwd(), "prisma", "migrations");
+  const migrationsPath = process.env.PRINTX_SCHEMA_MIGRATIONS_PATH
+    ? path.resolve(process.env.PRINTX_SCHEMA_MIGRATIONS_PATH)
+    : path.resolve(process.cwd(), "prisma", "migrations");
   try {
     const items = await readdir(migrationsPath, { withFileTypes: true });
     return items
@@ -402,6 +407,7 @@ export async function verifyBackupArchive(archivePath: string): Promise<{ valid:
     try { zip = await openArchiveWhenReady(archivePath); } catch { await extractArchiveWithSystemTar(archivePath, fallbackDir); }
     if (!zip) {
       const manifest = JSON.parse(await readFile(path.join(fallbackDir, "backup-manifest.json"), "utf8")) as BackupManifest;
+      if (manifest.version !== SUPPORTED_BACKUP_VERSION) return { valid: false, error: `Unsupported backup version: ${manifest.version}.` };
       const dbData = await readFile(path.join(fallbackDir, "sublimation.db"));
       if (calculateChecksum(dbData) !== manifest.databaseChecksum) return { valid: false, error: "Database checksum verification failed." };
       for (const file of manifest.files) {
@@ -417,6 +423,7 @@ export async function verifyBackupArchive(archivePath: string): Promise<{ valid:
 
     const manifestContent = (await readZipEntry(zip, manifestEntry))?.toString("utf8") ?? "";
     const manifest = JSON.parse(manifestContent) as BackupManifest;
+    if (manifest.version !== SUPPORTED_BACKUP_VERSION) return { valid: false, error: `Unsupported backup version: ${manifest.version}.` };
 
     // Verify DB entry exists in ZIP
     const dbEntry = zip.getEntry("sublimation.db");
@@ -460,11 +467,65 @@ export async function verifyBackupArchive(archivePath: string): Promise<{ valid:
   }
 }
 
+function normaliseStoredPath(value: string): string {
+  return value.trim().replaceAll("\\", "/").replace(/^\/+/, "").toLowerCase();
+}
+
+function remapStoredPath(value: string, type: "orders" | "sheets", files: BackupManifest["files"], targetRoot: string): string {
+  const normalized = normaliseStoredPath(value);
+  const candidates = files
+    .filter((file) => file.type === type)
+    .map((file) => ({ file, normalized: normaliseStoredPath(file.relativePath) }))
+    .sort((a, b) => b.normalized.length - a.normalized.length);
+  const match = candidates.find(({ normalized: candidate }) => normalized === candidate || normalized.endsWith(`/${candidate}`));
+  // A path not present in the archive must never point back to the source machine.
+  // Keep its filename in the desktop storage root so historical rows remain usable.
+  const relative = match?.file.relativePath ?? path.basename(value);
+  return path.resolve(targetRoot, relative);
+}
+
+type SqlExecutor = Pick<PrismaClient, "$queryRawUnsafe" | "$executeRawUnsafe">;
+
+async function remapStagedPaths(stagingPrisma: SqlExecutor, manifest: BackupManifest, targetOrdersFolder: string, targetSheetsFolder: string) {
+  const files = manifest.files;
+  const orderFiles = await stagingPrisma.$queryRawUnsafe<Array<{ id: string; storagePath: string }>>('SELECT "id", "storagePath" FROM "OrderFile"');
+  for (const row of orderFiles) {
+    await stagingPrisma.$executeRawUnsafe('UPDATE "OrderFile" SET "storagePath" = ? WHERE "id" = ?', remapStoredPath(row.storagePath, "orders", files, targetOrdersFolder), row.id);
+  }
+  const projects = await stagingPrisma.$queryRawUnsafe<Array<{ id: string; originalPath: string }>>('SELECT "id", "originalPath" FROM "ArtworkProject"');
+  for (const row of projects) {
+    await stagingPrisma.$executeRawUnsafe('UPDATE "ArtworkProject" SET "originalPath" = ? WHERE "id" = ?', remapStoredPath(row.originalPath, "orders", files, targetOrdersFolder), row.id);
+  }
+  const versions = await stagingPrisma.$queryRawUnsafe<Array<{ id: string; editedPath: string; printReadyPath: string }>>('SELECT "id", "editedPath", "printReadyPath" FROM "ArtworkVersion"');
+  for (const row of versions) {
+    await stagingPrisma.$executeRawUnsafe('UPDATE "ArtworkVersion" SET "editedPath" = ?, "printReadyPath" = ? WHERE "id" = ?', remapStoredPath(row.editedPath, "orders", files, targetOrdersFolder), remapStoredPath(row.printReadyPath, "orders", files, targetOrdersFolder), row.id);
+  }
+  const sheets = await stagingPrisma.$queryRawUnsafe<Array<{ id: string; storagePath: string }>>('SELECT "id", "storagePath" FROM "PrintSheet"');
+  for (const row of sheets) {
+    await stagingPrisma.$executeRawUnsafe('UPDATE "PrintSheet" SET "storagePath" = ? WHERE "id" = ?', remapStoredPath(row.storagePath, "sheets", files, targetSheetsFolder), row.id);
+  }
+}
+
+async function preserveDesktopAdminIfMissing(stagingPrisma: SqlExecutor, currentSettings: Array<{ key: string; value: string }>) {
+  const staged = await stagingPrisma.$queryRawUnsafe<Array<{ key: string; value: string }>>('SELECT "key", "value" FROM "AppSetting" WHERE "key" IN (?, ?)', ...ADMIN_CREDENTIAL_SETTING_KEYS);
+  const stagedValues = new Map(staged.map((row) => [row.key, row.value.trim()]));
+  const hasStaged = ADMIN_CREDENTIAL_SETTING_KEYS.every((key) => Boolean(stagedValues.get(key)));
+  if (hasStaged) return;
+  const currentValues = new Map(currentSettings.map((row) => [row.key, row.value.trim()]));
+  const hasCurrent = ADMIN_CREDENTIAL_SETTING_KEYS.every((key) => Boolean(currentValues.get(key)));
+  if (!hasCurrent) return;
+  for (const key of ADMIN_CREDENTIAL_SETTING_KEYS) {
+    await stagingPrisma.$executeRawUnsafe('INSERT INTO "AppSetting" ("id", "key", "value", "updatedAt", "createdAt") VALUES (?, ?, ?, datetime("now"), datetime("now")) ON CONFLICT("key") DO UPDATE SET "value" = excluded."value", "updatedAt" = datetime("now")', randomUUID(), key, currentValues.get(key));
+  }
+}
+
 // RESTORE BACKUP
 export async function restoreBackup(
   archivePath: string,
   options?: { remapOrdersFolder?: string; remapSheetsFolder?: string }
 ): Promise<{ success: boolean; error?: string }> {
+  if (restoreInProgress) return { success: false, error: "Another restore is already in progress." };
+  restoreInProgress = true;
   const databasePath = activeDatabasePath();
   const stagingDir = path.join(path.dirname(databasePath), "staging-restore");
   const safetyDir = path.join(path.dirname(databasePath), "safety-backup");
@@ -490,6 +551,10 @@ export async function restoreBackup(
     const manifestFile = path.join(stagingDir, "backup-manifest.json");
     const manifestContent = await readFile(manifestFile, "utf8");
     const manifest = JSON.parse(manifestContent) as BackupManifest;
+    if (manifest.version !== SUPPORTED_BACKUP_VERSION) throw new Error(`Unsupported backup version: ${manifest.version}.`);
+    const knownMigrations = await getSchemaMigrations();
+    const unknownMigration = manifest.schemaMigrations.find((migration) => !knownMigrations.includes(migration));
+    if (unknownMigration) throw new Error(`Backup requires unsupported database migration: ${unknownMigration}.`);
 
     const stagedDbPath = path.join(stagingDir, "sublimation.db");
     const dbChecksum = await calculateFileChecksum(stagedDbPath);
@@ -507,7 +572,17 @@ export async function restoreBackup(
       }
     }
 
+    // Resolve desktop destinations before rewriting staged database paths.
+    const activeStorage = await getOrderStorageSettings();
+    const targetOrdersFolder = options?.remapOrdersFolder
+      ? path.resolve(options.remapOrdersFolder)
+      : path.resolve(activeStorage.baseFolder);
+    const targetSheetsFolder = options?.remapSheetsFolder
+      ? path.resolve(options.remapSheetsFolder)
+      : path.resolve(activeStorage.printSheetFolder);
+
     // SQLite load test
+    const currentAdminSettings = await prisma.appSetting.findMany({ where: { key: { in: [...ADMIN_CREDENTIAL_SETTING_KEYS] } }, select: { key: true, value: true } });
     const stagingPrisma = new PrismaClient({
       datasources: {
         db: {
@@ -518,6 +593,10 @@ export async function restoreBackup(
 
     try {
       await stagingPrisma.$queryRawUnsafe("SELECT 1;");
+      await stagingPrisma.$transaction(async (tx) => {
+        await preserveDesktopAdminIfMissing(tx, currentAdminSettings);
+        await remapStagedPaths(tx, manifest, targetOrdersFolder, targetSheetsFolder);
+      });
     } catch (err) {
       throw new Error(`Failed to load SQLite staging database: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -525,13 +604,8 @@ export async function restoreBackup(
     }
 
     // 3. Prepare target folders and handle remapping logic
-    const activeStorage = await getOrderStorageSettings();
-    const targetOrdersFolder = options?.remapOrdersFolder
-      ? path.resolve(options.remapOrdersFolder)
-      : path.resolve(activeStorage.baseFolder);
-    const targetSheetsFolder = options?.remapSheetsFolder
-      ? path.resolve(options.remapSheetsFolder)
-      : path.resolve(activeStorage.printSheetFolder);
+    // Create a normal ZIP emergency backup before replacing anything.
+    await createBackup("manual");
 
     // Create safety backup
     await rm(safetyDir, { recursive: true, force: true });
@@ -609,6 +683,7 @@ export async function restoreBackup(
     // Cleanup staging and safety directories
     await rm(stagingDir, { recursive: true, force: true });
     await rm(safetyDir, { recursive: true, force: true });
+    restoreInProgress = false;
   }
 }
 

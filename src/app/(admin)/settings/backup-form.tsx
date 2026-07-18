@@ -52,11 +52,39 @@ export function BackupForm({
   const [remapOrders, setRemapOrders] = useState("");
   const [remapSheets, setRemapSheets] = useState("");
   const [loadingAction, setLoadingAction] = useState<string | null>(null);
+  const [restoreMessage, setRestoreMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const handleAction = async (name: string, fn: () => Promise<void>) => {
     setLoadingAction(name);
     try {
       await fn();
+    } finally {
+      setLoadingAction(null);
+    }
+  };
+
+  const restartAfterRestore = async () => {
+    setRestoreMessage({ type: "success", text: "Restore completed. Restarting PrintX with the restored database…" });
+    const desktop = (window as Window & { printxDesktop?: { restart: () => Promise<unknown> } }).printxDesktop;
+    if (desktop) {
+      await desktop.restart();
+      return;
+    }
+    window.location.assign("/settings?restore=success");
+  };
+
+  const runRestore = async (name: string, action: () => Promise<{ success: boolean; error?: string }>) => {
+    setLoadingAction(name);
+    setRestoreMessage(null);
+    try {
+      const result = await action();
+      if (!result.success) {
+        setRestoreMessage({ type: "error", text: result.error || "Restore failed." });
+        return;
+      }
+      await restartAfterRestore();
+    } catch (error) {
+      setRestoreMessage({ type: "error", text: error instanceof Error ? error.message : "Restore failed." });
     } finally {
       setLoadingAction(null);
     }
@@ -72,6 +100,12 @@ export function BackupForm({
           Configure automated database consistency backups, manage archive snapshots, and perform staged restores with rollbacks.
         </p>
       </div>
+
+      {restoreMessage && (
+        <div className={`rounded-lg border px-4 py-3 text-sm ${restoreMessage.type === "error" ? "border-red-500/30 bg-red-500/10 text-red-300" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"}`} role="status">
+          {restoreMessage.text}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Backup Settings Panel */}
@@ -171,7 +205,15 @@ export function BackupForm({
             Specify a path to a valid ZIP backup on this device. Restoring will replace the database and storage files.
           </p>
 
-          <form action={restoreFromPathAction} className="space-y-3">
+          <form
+            className="space-y-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!confirm("Are you sure you want to perform a restore? Current data will be replaced. An emergency backup will be created first.")) return;
+              const formData = new FormData(event.currentTarget);
+              void runRestore("restore-path", () => restoreFromPathAction(formData));
+            }}
+          >
             <div>
               <label className="block text-xs font-semibold text-slate-400 mb-1">
                 Local Zip Path
@@ -215,11 +257,6 @@ export function BackupForm({
             <button
               type="submit"
               disabled={!unlocked || !archivePath || loadingAction !== null}
-              onClick={(e) => {
-                if (!confirm("Are you sure you want to perform a restore? Current data will be replaced. A safety backup will be created.")) {
-                  e.preventDefault();
-                }
-              }}
               className="w-full flex items-center justify-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 px-4 py-2 text-sm font-bold text-white transition disabled:opacity-40"
             >
               <RotateCcw className="h-4 w-4" /> Restore Backup File
@@ -310,9 +347,7 @@ export function BackupForm({
                         <button
                           onClick={() => {
                             if (confirm("Restore this backup snapshot? Current files and database will be replaced. A safety backup will be created.")) {
-                              handleAction(`restore-${backup.id}`, async () => {
-                                await restoreFromHistoryAction(backup.id, remapOrders || undefined, remapSheets || undefined);
-                              });
+                              void runRestore(`restore-${backup.id}`, () => restoreFromHistoryAction(backup.id, remapOrders || undefined, remapSheets || undefined));
                             }
                           }}
                           disabled={!unlocked || backup.status !== "success" || loadingAction !== null}

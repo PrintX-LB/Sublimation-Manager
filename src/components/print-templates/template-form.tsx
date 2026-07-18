@@ -1,17 +1,28 @@
+"use client";
+
 import type { PrintTemplate } from "@prisma/client";
+import { useActionState } from "react";
+import type { TemplateFormState } from "@/app/(admin)/print-templates/actions";
+
 export function TemplateForm({
   action,
   template,
 }: {
-  action: (data: FormData) => void;
+  action: (state: TemplateFormState, data: FormData) => Promise<TemplateFormState>;
   template?: PrintTemplate;
 }) {
+  const [state, formAction, pending] = useActionState(action, {});
   return (
     <form
-      action={action}
+      action={formAction}
       className="mt-8 grid max-w-2xl gap-4 rounded-2xl border bg-white p-6 shadow-panel sm:grid-cols-2"
     >
       <input type="hidden" name="id" value={template?.id ?? ""} />
+      {state.message && (
+        <p role="alert" className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 sm:col-span-2">
+          {state.message}
+        </p>
+      )}
       <label className="sm:col-span-2">
         Name
         <input
@@ -87,8 +98,8 @@ export function TemplateForm({
         Line thickness (mm)
         <input name="cutMarkThicknessMm" type="number" min="0.1" step="0.1" defaultValue={template?.cutMarkThicknessMm?.toString() ?? "0.3"} className="mt-1 w-full rounded-lg border p-2" />
       </label>
-      <button className="rounded bg-brand-600 px-4 py-2 font-semibold text-white sm:col-span-2">
-        Save template
+      <button disabled={pending} className="rounded bg-brand-600 px-4 py-2 font-semibold text-white disabled:cursor-wait disabled:opacity-60 sm:col-span-2">
+        {pending ? "Saving…" : "Save template"}
       </button>
     </form>
   );

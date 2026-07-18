@@ -1,4 +1,4 @@
-import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "@/lib/db/prisma";
 
@@ -96,7 +96,7 @@ export async function ensureOrderFolder(orderNumber: string, customerName?: stri
   const root = path.resolve(baseFolder ?? (await getOrderStorageSettings()).baseFolder);
   const folder = path.resolve(root, sanitizeOrderFolderName(orderNumber, customerName));
   if (!isSafeChild(root, folder)) throw new Error("INVALID_ORDER_STORAGE_PATH");
-  await Promise.all(["originals", "exports", "attachments"].map((name) => mkdir(path.join(folder, name), { recursive: true })));
+  await Promise.all(["original", "exports", "attachments"].map((name) => mkdir(path.join(folder, name), { recursive: true })));
   return folder;
 }
 
@@ -108,12 +108,30 @@ function isSafeChild(root: string, candidate: string): boolean {
 
 function resolveStoredPath(storedPath: string, root: string): string | null {
   const normalised = storedPath.replaceAll("/", path.sep);
-  const candidate = normalised.startsWith(`uploads${path.sep}`)
-    ? path.resolve(process.cwd(), normalised)
-    : path.resolve(root, normalised);
   const uploadRoot = path.resolve(process.cwd(), "uploads");
-  if (isSafeChild(root, candidate) || isSafeChild(uploadRoot, candidate)) return candidate;
+  const candidates = path.isAbsolute(normalised)
+    ? [path.resolve(normalised)]
+    : normalised.startsWith(`uploads${path.sep}`)
+      ? [path.resolve(process.cwd(), normalised)]
+      : [path.resolve(process.cwd(), normalised), path.resolve(root, normalised)];
+  for (const candidate of candidates) {
+    if (isSafeChild(root, candidate) || isSafeChild(uploadRoot, candidate)) return candidate;
+  }
   return null;
+}
+
+/** Resolve legacy relative paths and current absolute order-storage paths safely. */
+export async function resolveStoredArtworkPath(storedPath: string | null | undefined): Promise<string | null> {
+  if (!storedPath?.trim()) return null;
+  const root = path.resolve((await getOrderStorageSettings()).baseFolder);
+  const candidate = resolveStoredPath(storedPath.trim(), root);
+  if (!candidate) return null;
+  try {
+    await access(candidate);
+    return candidate;
+  } catch {
+    return null;
+  }
 }
 
 function findOrderFolder(storedPath: string, orderNumber: string, root: string): string | null {

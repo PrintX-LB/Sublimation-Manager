@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { Folder, ArrowUp, ChevronRight, X, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
-import { saveStorageSettingsAction, testStorageFolderAction, openConfiguredFolderAction } from "./actions";
+import { saveStorageSettingsAction, openConfiguredFolderAction } from "./actions";
 
 interface StorageFormProps {
   initialBaseFolder: string;
@@ -139,13 +139,14 @@ export function StorageForm({
           {/* Actions Subbar */}
           <div className="flex flex-wrap gap-2 pt-1.5">
             <button
-              formAction={testStorageFolderAction}
-              className="rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition"
-            >
-              Test Folder
-            </button>
-            <button
               formAction={openConfiguredFolderAction}
+              onClick={async (event) => {
+                const desktop = (window as Window & { printxDesktop?: { openPath: (value: string) => Promise<string> } }).printxDesktop;
+                if (!desktop) return;
+                event.preventDefault();
+                const error = await desktop.openPath(baseFolder);
+                if (error) window.alert(`Unable to open folder: ${error}`);
+              }}
               className="rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition"
             >
               Open Folder
@@ -194,23 +195,16 @@ export function StorageForm({
           {/* Actions Subbar */}
           <div className="flex flex-wrap gap-2 pt-1.5">
             <button
-              formAction={testStorageFolderAction}
-              onClick={(e) => {
-                // Ensure we submit folderType as sheets
-                const form = e.currentTarget.form;
-                if (form) {
-                  const input = form.querySelector('input[name="folderType"]') as HTMLInputElement;
-                  if (input) input.value = "sheets";
-                }
-              }}
-              className="rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition"
-            >
-              Test Folder
-            </button>
-            <button
               formAction={openConfiguredFolderAction}
-              onClick={(e) => {
-                const form = e.currentTarget.form;
+              onClick={async (event) => {
+                const desktop = (window as Window & { printxDesktop?: { openPath: (value: string) => Promise<string> } }).printxDesktop;
+                if (desktop) {
+                  event.preventDefault();
+                  const error = await desktop.openPath(printSheetFolder);
+                  if (error) window.alert(`Unable to open folder: ${error}`);
+                  return;
+                }
+                const form = event.currentTarget.form;
                 if (form) {
                   const input = form.querySelector('input[name="folderType"]') as HTMLInputElement;
                   if (input) input.value = "sheets";

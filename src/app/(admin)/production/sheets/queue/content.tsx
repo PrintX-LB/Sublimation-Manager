@@ -7,7 +7,7 @@ import {
   templateCompatibilityKey,
   type PairingAttempt,
 } from "@/lib/production/sheet-pairing";
-import { generateQueueSheetAction } from "./actions";
+import { generateAllQueueSheetsAction, generateQueueSheetAction } from "./actions";
 import { PairDraftEditor } from "./pair-draft-editor";
 import { orderItemReference } from "@/lib/orders/item-reference";
 
@@ -59,6 +59,7 @@ export async function AutomaticPairingContent({
     take: 200,
   });
   const eligible: PairingAttempt[] = [];
+  const blocked: Array<{ id: string; orderNumber: string; itemSequence: number; reason: string }> = [];
   for (const attempt of attempts) {
     if (
       attempt.printSheetSlots.some(
@@ -72,20 +73,24 @@ export async function AutomaticPairingContent({
     const template =
       attempt.orderItem.artworkProject?.template ??
       attempt.orderItem.productVariant?.product.printTemplate;
-    if (
-      !version ||
-      !template ||
-      version.widthPx !== SHEET_LAYOUT.designWidthPx ||
-      version.heightPx !== SHEET_LAYOUT.designHeightPx
-    )
+    if (!version) {
+      blocked.push({ id: attempt.id, orderNumber: attempt.orderItem.order.orderNumber, itemSequence: attempt.orderItem.itemSequence, reason: "No artwork version is available." });
       continue;
+    }
+    if (!template) {
+      blocked.push({ id: attempt.id, orderNumber: attempt.orderItem.order.orderNumber, itemSequence: attempt.orderItem.itemSequence, reason: "No print template is linked." });
+      continue;
+    }
     const widthPx = mmToPixels(Number(template.widthMm), template.dpi);
     const heightPx = mmToPixels(Number(template.heightMm), template.dpi);
-    if (
-      widthPx !== SHEET_LAYOUT.designWidthPx ||
-      heightPx !== SHEET_LAYOUT.designHeightPx
-    )
+    if (widthPx < 1 || heightPx < 1 || widthPx > SHEET_LAYOUT.designWidthPx || heightPx > SHEET_LAYOUT.designHeightPx) {
+      blocked.push({ id: attempt.id, orderNumber: attempt.orderItem.order.orderNumber, itemSequence: attempt.orderItem.itemSequence, reason: `Template is ${template.widthMm}×${template.heightMm} mm and is larger than the available A4 transfer slot.` });
       continue;
+    }
+    if (version.widthPx !== widthPx || version.heightPx !== heightPx) {
+      blocked.push({ id: attempt.id, orderNumber: attempt.orderItem.order.orderNumber, itemSequence: attempt.orderItem.itemSequence, reason: `Artwork is ${version.widthPx}×${version.heightPx}px but the selected template requires ${widthPx}×${heightPx}px.` });
+      continue;
+    }
     const settings = attempt.orderItem.artworkProject?.settingsJson
       ? (JSON.parse(attempt.orderItem.artworkProject.settingsJson) as {
           contourEnabled?: boolean;
@@ -124,6 +129,10 @@ export async function AutomaticPairingContent({
   const totalSheets = fullSheets + unpaired.length;
   const urgentCount = eligible.filter((item) => item.priority === "Urgent").length;
   const overdueCount = eligible.filter((item) => item.dueDate && item.dueDate < new Date()).length;
+  const generationBatches = [
+    ...pairs.map(([first, second]) => ({ attempt1: first.id, attempt2: second.id })),
+    ...unpaired.map((item) => ({ attempt1: item.id })),
+  ];
   const card = (item: PairingAttempt) => (
     <div className="rounded-lg border border-slate-700 bg-slate-900 p-3">
       <div className="flex items-start justify-between gap-2">
@@ -175,6 +184,7 @@ export async function AutomaticPairingContent({
           Refresh queue
         </Link>
         <Link href="/production/sheets?view=automatic&reset=1" className="rounded border border-slate-700 px-3 py-2 text-xs text-slate-300">Reset Suggestions</Link>
+        {generationBatches.length ? <form action={generateAllQueueSheetsAction}><input type="hidden" name="batch" value={JSON.stringify(generationBatches)} /><input type="hidden" name="generationRequestKey" value={randomUUID()} /><button className="rounded bg-brand-600 px-3 py-2 text-xs font-semibold text-white">Generate all sheets ({generationBatches.length})</button></form> : null}
       </div>
       <section className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/60 p-2 text-xs">
         <div className="min-w-[120px] flex-1 rounded-lg bg-slate-950/50 px-3 py-2">
@@ -196,6 +206,20 @@ export async function AutomaticPairingContent({
         <div className="rounded-lg bg-amber-500/10 px-3 py-2 text-amber-200">Urgent {urgentCount}</div>
         <div className="rounded-lg bg-rose-500/10 px-3 py-2 text-rose-200">Overdue {overdueCount}</div>
       </section>
+      {blocked.length ? (
+        <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+          <h2 className="font-semibold text-amber-200">Ready to Print — needs attention</h2>
+          <p className="mt-1 text-xs text-amber-100/70">These orders are ready, but cannot be placed on an A4 mug sheet until their artwork or template is corrected.</p>
+          <div className="mt-3 space-y-2">
+            {blocked.map((item) => (
+              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-500/20 px-3 py-2 text-xs">
+                <span className="font-semibold text-amber-100">{orderItemReference(item.orderNumber, item.itemSequence)}</span>
+                <span className="text-amber-100/80">{item.reason}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <div className="grid gap-5 xl:grid-cols-[1fr_1.2fr_320px]">
         <section className="space-y-3">
           <h2 className="font-semibold">Eligible transfers</h2>

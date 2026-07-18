@@ -8,6 +8,7 @@ import { printSheetFileExists } from "@/lib/print-sheet-library";
 import {
   cancelPrintSheetAction,
   cancelPrintSheetAndReleaseAction,
+  deleteGeneratedPrintSheetAction,
   markPrintSheetPrintedAction,
   recreatePrintSheetFileAction,
   regeneratePhysicalPrintSheetAction,
@@ -15,6 +16,7 @@ import {
 } from "../actions";
 import { ReleaseConfirmation } from "./release-confirmation";
 import { CancelControls } from "./cancel-controls";
+import { DeleteSheetButton } from "../delete-sheet-button";
 
 export const dynamic = "force-dynamic";
 const money = (value: unknown) => `$${Number(value ?? 0).toFixed(2)}`;
@@ -257,6 +259,11 @@ export default async function PrintSheetDetailPage({
                 Regenerate Physical Sheet
               </button>
             </form>
+            <DeleteSheetButton
+              sheetId={sheet.id}
+              sheetLabel={sheet.sheetNumber ?? sheet.filename}
+              action={deleteGeneratedPrintSheetAction}
+            />
             <p className="text-xs text-slate-500">
               Regeneration creates a new sheet record. It does not reverse the
               original consumption.

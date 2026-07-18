@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db/prisma";
 import { generateManualSheetAction } from "../../sheet-builder/actions";
 import { templateCompatibilityKey } from "@/lib/production/sheet-pairing";
-import { SHEET_LAYOUT } from "@/lib/production-sheet";
+import { A4_SHEET, SHEET_LAYOUT } from "@/lib/production-sheet";
 
 export async function generateQueueSheetAction(formData: FormData) {
   const attempt1 = String(formData.get("attempt1") ?? "").trim();
@@ -96,10 +96,24 @@ export async function generateQueueSheetAction(formData: FormData) {
             candidate.id === attempt.orderItem.artworkProject?.activeVersionId,
         )
       : attempt.orderItem.artworkProject?.versions[0];
+    const template =
+      attempt.orderItem.artworkProject?.template ??
+      attempt.orderItem.productVariant?.product.printTemplate;
+    if (!version)
+      throw new Error("QUEUE_ARTWORK_INVALID");
+    const templateWidthPx = template
+      ? Math.round((Number(template.widthMm) * template.dpi) / 25.4)
+      : version.widthPx;
+    const templateHeightPx = template
+      ? Math.round((Number(template.heightMm) * template.dpi) / 25.4)
+      : version.heightPx;
     if (
-      !version ||
-      version.widthPx !== SHEET_LAYOUT.designWidthPx ||
-      version.heightPx !== SHEET_LAYOUT.designHeightPx
+      templateWidthPx < 1 ||
+      templateHeightPx < 1 ||
+      templateWidthPx > SHEET_LAYOUT.designWidthPx ||
+      templateHeightPx > SHEET_LAYOUT.designHeightPx ||
+      version.widthPx !== templateWidthPx ||
+      version.heightPx !== templateHeightPx
     )
       throw new Error("QUEUE_ARTWORK_INVALID");
   }
@@ -107,7 +121,20 @@ export async function generateQueueSheetAction(formData: FormData) {
     const template =
       attempt.orderItem.artworkProject?.template ??
       attempt.orderItem.productVariant?.product.printTemplate;
-    if (!template) throw new Error("QUEUE_TEMPLATE_MISSING");
+    if (!template) {
+      const version = attempt.orderItem.artworkProject?.activeVersionId
+        ? attempt.orderItem.artworkProject.versions.find(
+            (candidate) => candidate.id === attempt.orderItem.artworkProject?.activeVersionId,
+          )
+        : attempt.orderItem.artworkProject?.versions[0];
+      if (!version) throw new Error("QUEUE_ARTWORK_INVALID");
+      return templateCompatibilityKey({
+        name: "Legacy artwork",
+        widthMm: (version.widthPx * 25.4) / A4_SHEET.dpi,
+        heightMm: (version.heightPx * 25.4) / A4_SHEET.dpi,
+        dpi: A4_SHEET.dpi,
+      });
+    }
     return templateCompatibilityKey({
       name: template.name,
       widthMm: Number(template.widthMm),
@@ -147,6 +174,29 @@ export async function generateQueueSheetAction(formData: FormData) {
     String(formData.get("generationRequestKey") ?? ""),
   );
   await generateManualSheetAction(generation);
+  revalidatePath("/production/sheets/queue");
+  revalidatePath("/production/sheets");
+  if (String(formData.get("bulk") ?? "") === "1") return;
+  redirect("/production/sheets?view=automatic&generated=1");
+}
+
+export async function generateAllQueueSheetsAction(formData: FormData) {
+  const raw = String(formData.get("batch") ?? "");
+  let batches: Array<{ attempt1: string; attempt2?: string }>;
+  try {
+    batches = JSON.parse(raw) as Array<{ attempt1: string; attempt2?: string }>;
+  } catch {
+    throw new Error("QUEUE_BATCH_INVALID");
+  }
+  if (!Array.isArray(batches) || batches.length === 0 || batches.length > 200) throw new Error("QUEUE_BATCH_INVALID");
+  for (const batch of batches) {
+    const request = new FormData();
+    request.set("attempt1", batch.attempt1);
+    if (batch.attempt2) request.set("attempt2", batch.attempt2);
+    request.set("bulk", "1");
+    request.set("generationRequestKey", `bulk-${String(formData.get("generationRequestKey") ?? "")}-${batch.attempt1}`);
+    await generateQueueSheetAction(request);
+  }
   revalidatePath("/production/sheets/queue");
   revalidatePath("/production/sheets");
   redirect("/production/sheets?view=automatic&generated=1");

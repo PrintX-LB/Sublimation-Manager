@@ -279,6 +279,48 @@ async function restoreItems(
   }
 }
 
+/** Releases a blank reservation when an order never entered production. */
+export async function releaseUnconsumedOrderStock(
+  tx: Prisma.TransactionClient,
+  orderId: string,
+) {
+  const order = await tx.order.findUnique({
+    where: { id: orderId },
+    select: {
+      id: true,
+      stockCommitted: true,
+      items: {
+        select: {
+          id: true,
+          quantity: true,
+          productVariantId: true,
+          productionAttempts: { select: { status: true } },
+          productionIncidents: { select: { id: true } },
+        },
+      },
+      materialConsumptions: { select: { id: true } },
+    },
+  });
+  if (!order?.stockCommitted || order.materialConsumptions.length) return false;
+  const hasProductionActivity = order.items.some(
+    (item) =>
+      item.productionIncidents.length > 0 ||
+      item.productionAttempts.some(
+        (attempt) =>
+          !["pending", "ready to print"].includes(
+            attempt.status.trim().toLowerCase(),
+          ),
+      ),
+  );
+  if (hasProductionActivity) return false;
+  await restoreItems(
+    tx,
+    order,
+    "Unproduced order deleted; stock reservation released",
+  );
+  return true;
+}
+
 async function ensureProductionAttempts(
   tx: Prisma.TransactionClient,
   items: Array<{ id: string }>,
@@ -356,6 +398,7 @@ export async function createOrder(input: OrderInput) {
       data: {
         orderNumber: `PX${sequence.value.toString().padStart(5, "0")}`,
         customerId: customer.id,
+        status: "Draft",
         dueDate: input.dueDate
           ? new Date(`${input.dueDate}T00:00:00.000Z`)
           : undefined,

@@ -3,6 +3,10 @@ import { ProductForm } from "@/components/products/product-form";
 import { getProductFormOptions } from "@/lib/repositories/products";
 import { createProductAction } from "../actions";
 
+// Product form options come from the runtime SQLite database. Force a fresh
+// lookup so newly created print templates appear in packaged desktop builds.
+export const dynamic = "force-dynamic";
+
 export default async function NewProductPage() {
   const [categories, templates] = await getProductFormOptions();
   return (

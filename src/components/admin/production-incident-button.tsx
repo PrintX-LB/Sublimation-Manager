@@ -16,6 +16,13 @@ type WasteOption = {
   unit: string;
   currentQuantity: string;
 };
+type IncidentItem = {
+  orderItemId: string;
+  productName: string;
+  itemReference: string;
+  disabledReason?: string;
+  wasteOptions?: WasteOption[];
+};
 
 export function ProductionIncidentButton({
   orderItemId,
@@ -23,13 +30,18 @@ export function ProductionIncidentButton({
   itemReference,
   disabledReason,
   wasteOptions = [],
+  items,
 }: {
-  orderItemId: string;
-  productName: string;
+  orderItemId?: string;
+  productName?: string;
   itemReference?: string;
   disabledReason?: string;
   wasteOptions?: WasteOption[];
+  items?: IncidentItem[];
 }) {
+  const availableItems = items ?? (orderItemId && productName ? [{ orderItemId, productName, itemReference: itemReference ?? "", disabledReason, wasteOptions }] : []);
+  const [selectedItem, setSelectedItem] = useState<IncidentItem | null>(availableItems.length === 1 ? availableItems[0]! : null);
+  const [chooserOpen, setChooserOpen] = useState(false);
   const [open, setOpen] = useState(false);
   const [result, setResult] = useState<ActionResult | null>(null);
   const [pending, setPending] = useState(false);
@@ -40,13 +52,24 @@ export function ProductionIncidentButton({
     {},
   );
 
-  function showDialog() {
+  function showDialog(item?: IncidentItem) {
+    const nextItem = item ?? selectedItem ?? availableItems[0];
+    if (!nextItem) return;
+    setSelectedItem(nextItem);
     setResult(null);
     setIdempotencyKey(crypto.randomUUID());
     setBlankProductOutcome("");
     setOtherMaterialWasted("None");
     setSelectedWaste({});
     setOpen(true);
+  }
+
+  function openIncident() {
+    if (availableItems.length > 1) {
+      setChooserOpen(true);
+      return;
+    }
+    showDialog(availableItems[0]);
   }
 
   async function submit(formData: FormData) {
@@ -61,20 +84,37 @@ export function ProductionIncidentButton({
     <>
       <button
         type="button"
-        onClick={showDialog}
-        disabled={Boolean(disabledReason)}
-        title={disabledReason}
+        onClick={openIncident}
+        disabled={!availableItems.length || (availableItems.length === 1 && Boolean(availableItems[0]?.disabledReason))}
+        title={availableItems.length === 1 ? availableItems[0]?.disabledReason : undefined}
         className="rounded border border-rose-500/60 px-2 py-1 text-[11px] text-rose-200 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:border-slate-700 disabled:text-slate-500"
       >
-        Record Incident & Reprint
+        Incident &amp; Reprint
       </button>
-      {disabledReason ? (
-        <span className="text-[11px] text-amber-300">{disabledReason}</span>
+      {availableItems.length === 1 && availableItems[0]?.disabledReason ? (
+        <span className="text-[11px] text-amber-300">{availableItems[0].disabledReason}</span>
       ) : null}
       {result?.success ? (
         <p className="mt-1 text-[11px] text-emerald-300">{result.success}</p>
       ) : null}
-      {open ? (
+      {chooserOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4" role="presentation">
+          <div className="w-full max-w-md space-y-3 rounded-xl border border-slate-700 bg-slate-900 p-5 shadow-2xl" role="dialog" aria-modal="true">
+            <h2 className="text-base font-semibold text-slate-100">Select item to reprint</h2>
+            <p className="text-xs text-slate-400">Choose the specific order item affected by the incident.</p>
+            <div className="space-y-2">
+              {availableItems.map((item) => (
+                <button key={item.orderItemId} type="button" disabled={Boolean(item.disabledReason)} onClick={() => { setChooserOpen(false); showDialog(item); }} className="flex w-full items-center justify-between rounded border border-slate-700 px-3 py-2 text-left text-xs text-slate-200 hover:border-brand-500 disabled:cursor-not-allowed disabled:opacity-50">
+                  <span>{item.itemReference} · {item.productName}</span>
+                  {item.disabledReason ? <span className="ml-2 text-[10px] text-amber-300">{item.disabledReason}</span> : null}
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => setChooserOpen(false)} className="rounded border border-slate-700 px-3 py-2 text-xs text-slate-300">Cancel</button>
+          </div>
+        </div>
+      ) : null}
+      {open && selectedItem ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4"
           role="presentation"
@@ -88,20 +128,20 @@ export function ProductionIncidentButton({
               <h2 className="text-base font-semibold text-slate-100">
                 Record Incident &amp; Reprint
               </h2>
-              {itemReference ? <p className="text-xs font-semibold text-brand-200">{itemReference}</p> : null}
+              {selectedItem.itemReference ? <p className="text-xs font-semibold text-brand-200">{selectedItem.itemReference}</p> : null}
               <p className="mt-1 text-xs text-slate-400">
-                A replacement print attempt for <strong>{productName}</strong>{" "}
+                A replacement print attempt for <strong>{selectedItem.productName}</strong>{" "}
                 will be created. Select whether the physical blank product was
                 also damaged.
               </p>
             </div>
-            <input type="hidden" name="orderItemId" value={orderItemId} />
+            <input type="hidden" name="orderItemId" value={selectedItem.orderItemId} />
             <input type="hidden" name="idempotencyKey" value={idempotencyKey} />
             <input
               type="hidden"
               name="wastedMaterials"
               value={JSON.stringify(
-                wasteOptions
+                (selectedItem.wasteOptions ?? [])
                   .filter((option) => selectedWaste[option.inventoryItemId])
                   .map((option) => ({
                     inventoryItemId: option.inventoryItemId,
@@ -166,12 +206,12 @@ export function ProductionIncidentButton({
                 ))}
               </select>
             </label>
-            {wasteOptions.length ? (
+            {(selectedItem.wasteOptions ?? []).length ? (
               <fieldset className="space-y-2 rounded border border-slate-800 bg-slate-950/50 p-3">
                 <legend className="px-1 text-xs font-semibold text-slate-300">
                   Select additional materials wasted
                 </legend>
-                {wasteOptions.map((option) => (
+                {(selectedItem.wasteOptions ?? []).map((option) => (
                   <label
                     key={option.inventoryItemId}
                     className="flex items-center justify-between gap-2 text-xs text-slate-300"

@@ -67,6 +67,7 @@ Production Recipes V1 defines staged material requirements per ProductVariant us
 - First launch uses an empty database and applies production Prisma migrations; real data is imported only through the existing Backup & Restore workflow.
 - Fresh desktop databases provide one-time Admin setup backed by a bcrypt password hash in application settings; no default or personal password is embedded in the package.
 - Desktop session signing uses a randomly generated per-installation secret. Backups restore database-backed Admin credentials and invalidate the current Admin session after restore.
+- Desktop restore accepts browser-version `1.0.0` ZIP backups, validates bundled migrations, remaps archived source paths into desktop storage folders, preserves the current desktop Admin when a backup omits Admin settings, and restarts Electron only after Prisma/database replacement is complete.
 - The first distribution target is an unsigned Windows x64 portable executable. An NSIS installer, code signing and automatic updates remain follow-up work after portable verification.
 
 ## Deferred QR workflow

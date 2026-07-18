@@ -18,3 +18,13 @@ print-sheets/
 test_print_sheets_base/
 desktop-dist/
 release/
+release*/
+*.exe
+*.blockmap
+*.7z
+*.tmp
+*.bak
+*.old
+*.zip
+*.log
+coverage/

@@ -6,6 +6,7 @@ import {
   getOrder,
   transitionOrder,
   updateCommittedItemQuantity,
+  releaseUnconsumedOrderStock,
 } from "@/lib/orders/service";
 import { paymentState } from "./orders";
 
@@ -96,7 +97,8 @@ async function draft(quantity = 2) {
 
 describe("SQLite order stock transactions", () => {
   it("does not deduct drafts and commits only once", async () => {
-    const { variantId } = await draft();
+    const { variantId, order } = await draft();
+    expect(order.status).toBe("Draft");
     expect(
       (
         await prisma.productVariant.findUniqueOrThrow({
@@ -127,6 +129,17 @@ describe("SQLite order stock transactions", () => {
           where: { id: variantId },
         })
       ).stockQuantity.toString(),
+    ).toBe("10");
+  });
+  it("releases a Ready to Print reservation when an unproduced order is deleted", async () => {
+    const { variantId, order } = await draft(1);
+    await transitionOrder(order.id, "Ready to print");
+    expect(
+      (await prisma.productVariant.findUniqueOrThrow({ where: { id: variantId } })).stockQuantity.toString(),
+    ).toBe("8");
+    await prisma.$transaction((tx) => releaseUnconsumedOrderStock(tx, order.id));
+    expect(
+      (await prisma.productVariant.findUniqueOrThrow({ where: { id: variantId } })).stockQuantity.toString(),
     ).toBe("10");
   });
   it("prevents approval when stock is insufficient", async () => {

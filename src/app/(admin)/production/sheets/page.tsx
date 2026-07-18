@@ -10,6 +10,8 @@ import { printSheetFileExists } from "@/lib/print-sheet-library";
 import { orderItemReference } from "@/lib/orders/item-reference";
 import { ManualSheetBuilderContent } from "../sheet-builder/content";
 import { AutomaticPairingContent } from "./queue/content";
+import { DeleteSheetButton } from "./delete-sheet-button";
+import { deleteGeneratedPrintSheetAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +45,11 @@ async function GeneratedSheetHistory({ params }: { params: WorkspaceParams }) {
   const status = params.status ?? "";
   const page = Math.max(1, Number(params.page ?? "1") || 1);
   const pageSize = 25;
+  const returnToParams = new URLSearchParams({ view: "history" });
+  if (q) returnToParams.set("q", q);
+  if (status) returnToParams.set("status", status);
+  if (page > 1) returnToParams.set("page", String(page));
+  const returnTo = `/production/sheets?${returnToParams.toString()}`;
   const where = {
     ...(status ? { status } : {}),
     ...(q
@@ -147,7 +154,7 @@ async function GeneratedSheetHistory({ params }: { params: WorkspaceParams }) {
               >
                 <td className="px-4 py-3">
                   <Link
-                    href={`/production/sheets/${sheet.id}`}
+                    href={`/production/sheets/${sheet.id}?returnTo=${encodeURIComponent(returnTo)}`}
                     className="text-brand-200 flex items-center gap-2 font-semibold hover:underline"
                   >
                     <FileImage size={16} />
@@ -194,11 +201,16 @@ async function GeneratedSheetHistory({ params }: { params: WorkspaceParams }) {
                 </td>
                 <td className="px-4 py-3 text-right">
                   <Link
-                    href={`/production/sheets/${sheet.id}`}
+                    href={`/production/sheets/${sheet.id}?returnTo=${encodeURIComponent(returnTo)}`}
                     className="rounded border border-slate-700 px-3 py-1.5 text-xs"
                   >
                     Open
                   </Link>
+                  <DeleteSheetButton
+                    sheetId={sheet.id}
+                    sheetLabel={sheet.sheetNumber ?? sheet.filename}
+                    action={deleteGeneratedPrintSheetAction}
+                  />
                 </td>
               </tr>
             ))}

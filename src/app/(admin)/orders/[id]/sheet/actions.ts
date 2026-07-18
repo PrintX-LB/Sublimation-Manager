@@ -7,7 +7,7 @@ import path from "node:path";
 import sharp from "sharp";
 import { prisma } from "@/lib/db/prisma";
 import { A4_SHEET, SHEET_LAYOUT, nextSheetFilename, sheetLayout } from "@/lib/production-sheet";
-import { getPrintSheetBuilderFolder } from "@/lib/order-storage";
+import { getPrintSheetBuilderFolder, resolveStoredArtworkPath } from "@/lib/order-storage";
 import { cutMarksSvg, mirrorArtworkForSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-render";
 import { nextPrintSheetNumber } from "@/lib/print-sheet-library";
 import { orderItemReference } from "@/lib/orders/item-reference";
@@ -53,16 +53,15 @@ export async function createA4PrintSheetAction(formData: FormData) {
   );
 
   const sourceRelative = first.version.printReadyPath || first.version.editedPath;
-  const sourceResolved = path.resolve(process.cwd(), sourceRelative);
-  if (path.basename(path.dirname(path.dirname(sourceResolved))) !== order.orderNumber) throw new Error("INVALID_ARTWORK_PATH");
+  const sourceResolved = await resolveStoredArtworkPath(sourceRelative);
+  if (!sourceResolved) throw new Error("INVALID_ARTWORK_PATH");
   await mkdir(orderFolder, { recursive: true });
   const existing = await readdir(orderFolder).catch(() => [] as string[]);
   const filename = nextSheetFilename(filenameInput || `A4_${orderItemReference(order.orderNumber, first.item.itemSequence)}_${orderItemReference(order.orderNumber, second.item.itemSequence)}.png`, existing);
   const images = await Promise.all(selected.map(async ({ version }) => {
     const relative = (includeContour ? version.printReadyPath : version.editedPath) || version.printReadyPath || version.editedPath;
-    const resolved = path.resolve(process.cwd(), relative);
-    const uploadsRoot = path.resolve(process.cwd(), "uploads");
-    if (!resolved.startsWith(`${uploadsRoot}${path.sep}`)) throw new Error("INVALID_ARTWORK_PATH");
+    const resolved = await resolveStoredArtworkPath(relative);
+    if (!resolved) throw new Error("INVALID_ARTWORK_PATH");
     const metadata = await sharp(resolved).metadata();
     if (metadata.width !== SHEET_LAYOUT.designWidthPx || metadata.height !== SHEET_LAYOUT.designHeightPx) throw new Error("ARTWORK_DIMENSIONS_INVALID");
     return { input: await mirrorArtworkForSheet(await sharp(resolved).png().toBuffer()), width: SHEET_LAYOUT.designWidthPx, height: SHEET_LAYOUT.designHeightPx };

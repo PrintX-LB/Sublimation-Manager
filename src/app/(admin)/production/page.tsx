@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, FileText, Zap } from "lucide-react";
+import { ArrowRight, FileText } from "lucide-react";
 import { PageHeading } from "@/components/admin/page-heading";
 import { ProductionIncidentButton } from "@/components/admin/production-incident-button";
 import { prisma } from "@/lib/db/prisma";
@@ -79,7 +79,7 @@ export default async function ProductionPage() {
         ))}
       </section>
       <div className="overflow-x-auto pb-3">
-        <div className="grid min-w-[1280px] grid-cols-8 gap-3">
+        <div className="grid min-w-[960px] grid-cols-3 gap-4">
           {PRODUCTION_COLUMNS.map((status) => (
             <section
               key={status}
@@ -93,10 +93,10 @@ export default async function ProductionPage() {
                   {groups[status].length}
                 </span>
               </header>
-              <div className="flex-1 space-y-2 overflow-y-auto p-2">
+              <div className="flex-1 space-y-3 overflow-y-auto p-3">
                 {groups[status].length ? (
                     groups[status].map((order) => (
-                    <ProductionCard key={order.id} order={order} now={now} />
+                    <CompactProductionCard key={order.id} order={order} now={now} />
                   ))
                 ) : (
                   <p className="py-10 text-center text-xs text-slate-500">
@@ -132,7 +132,7 @@ type BoardOrder = Awaited<ReturnType<typeof prisma.order.findMany>>[number] & {
   }>;
 };
 
-function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
+function CompactProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
   const paid = order.payments.reduce(
     (sum, payment) => sum + Number(payment.amount),
     0,
@@ -169,19 +169,27 @@ function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
         >
           {order.orderNumber}
         </Link>
-        {order.priority === "Urgent" ? (
-          <Zap size={15} className="text-amber-300" aria-label="Urgent" />
-        ) : null}
+        <div className="flex items-center gap-1 text-[10px]">
+          <span className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-400">{order.priority === "Urgent" ? "Urgent" : "Normal"}</span>
+          {overdue ? <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-rose-300">Overdue</span> : order.dueDate ? <span className="rounded bg-slate-800 px-1.5 py-0.5 text-slate-400">Due {order.dueDate.toLocaleDateString("en-GB")}</span> : null}
+        </div>
       </div>
       <p className="mt-1 truncate text-sm text-slate-300">
         {order.customer.fullName}
       </p>
-      <p className="mt-1.5 text-xs text-slate-400">
-        {order.items
-          .map((item) => `${orderItemReference(order.orderNumber, item.itemSequence)} ${item.productNameSnapshot} ×${item.quantity}`)
-          .join(", ")}
-      </p>
-      {order.items.some((item) => item.productionAttempts.length) ? <p className="mt-1 text-[11px] text-slate-500">Attempt {order.items.find((item) => item.productionAttempts.length)?.productionAttempts[0]?.attemptNumber} · {order.items.find((item) => item.productionAttempts.length)?.productionAttempts[0]?.status}</p> : null}
+      {order.items.length === 1 ? (
+        <p className="mt-1.5 truncate text-xs text-slate-300" title={order.items[0]?.productNameSnapshot}>
+          {orderItemReference(order.orderNumber, order.items[0]!.itemSequence)} · {order.items[0]!.productNameSnapshot} ×{order.items[0]!.quantity}
+        </p>
+      ) : (
+        <div className="mt-1.5">
+          <p className="text-xs text-slate-300">{order.items.length} items · {order.items.reduce((sum, item) => sum + item.quantity, 0)} units</p>
+          <div className="mt-1 space-y-1">
+            {order.items.map((item) => <p key={item.id} className="truncate text-[11px] text-slate-400" title={item.productNameSnapshot}>{orderItemReference(order.orderNumber, item.itemSequence)} · {item.productNameSnapshot} ×{item.quantity}</p>)}
+          </div>
+        </div>
+      )}
+      {order.items.some((item) => item.productionAttempts.length) ? <p className="mt-1 text-[10px] text-slate-500">{order.items.every((item) => item.productionAttempts[0]?.status === order.items[0]?.productionAttempts[0]?.status) ? `Attempt ${order.items.find((item) => item.productionAttempts.length)?.productionAttempts[0]?.attemptNumber} · ${order.items.find((item) => item.productionAttempts.length)?.productionAttempts[0]?.status}` : "Item attempts differ"}</p> : null}
       <div className="mt-2 flex flex-wrap gap-1 text-[10px]">
         {overdue ? (
           <span className="rounded bg-rose-500/15 px-2 py-1 text-rose-300">
@@ -199,7 +207,7 @@ function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
         </span>
         {paid < total ? (
           <span className="rounded bg-rose-500/15 px-2 py-1 text-rose-300">
-            {formatUSD(total - paid)} outstanding
+            Outstanding {formatUSD(total - paid)}
           </span>
         ) : (
           <span className="rounded bg-emerald-500/15 px-2 py-1 text-emerald-300">
@@ -215,28 +223,8 @@ function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
           <FileText size={13} aria-label="Notes" />
         ) : null}
       </div>
-      <p className="mt-2 text-xs text-slate-500">
-        Due:{" "}
-        {order.dueDate
-          ? order.dueDate.toLocaleDateString("en-GB")
-          : "No due date"}
-      </p>
       {order.items.some((item) => item.printSheetSlots.length) ? <p className="mt-2 text-xs text-sky-300">Sheet {order.items.find((item) => item.printSheetSlots.length)?.printSheetSlots[0]?.sheet.sheetNumber ?? "linked"} · {order.items.find((item) => item.printSheetSlots.length)?.printSheetSlots[0]?.sheet.status.replaceAll("_", " ")}</p> : null}
       <div className="mt-2 flex flex-wrap gap-1">
-        <Link
-          href={`/orders/${order.id}`}
-          className="rounded border border-slate-700 px-2 py-1 text-[11px]"
-        >
-          View order
-        </Link>
-        {order.items[0] ? (
-          <Link
-            href={`/orders/${order.id}/items/${order.items[0].id}/artwork`}
-            className="rounded border border-slate-700 px-2 py-1 text-[11px]"
-          >
-            Open artwork
-          </Link>
-        ) : null}
         <Link
           href={`/orders/${order.id}#payments`}
           className="rounded border border-slate-700 px-2 py-1 text-[11px]"
@@ -259,15 +247,14 @@ function ProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
           </select>
           <button className="rounded border border-slate-700 px-2 py-1 text-[11px]">Change</button>
         </form>
-        {order.items.map((item) => (
-          <ProductionIncidentButton
-            key={item.id}
-            orderItemId={item.id}
-            productName={item.productNameSnapshot}
-            itemReference={orderItemReference(order.orderNumber, item.itemSequence)}
-            disabledReason={order.status === "Completed" ? "Order is completed" : item.productVariant ? undefined : "Product is not linked to inventory"}
-          />
-        ))}
+        <ProductionIncidentButton
+          items={order.items.map((item) => ({
+            orderItemId: item.id,
+            productName: item.productNameSnapshot,
+            itemReference: orderItemReference(order.orderNumber, item.itemSequence),
+            disabledReason: order.status === "Completed" ? "Order is completed" : item.productVariant ? undefined : "Product is not linked to inventory",
+          }))}
+        />
       </div>
       <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-2">
         <form action={updateOrderPriorityAction}>

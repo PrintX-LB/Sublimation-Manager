@@ -13,6 +13,7 @@ import {
   runStorageCleanupAction,
 } from "./actions";
 import { ResetDevelopmentForm } from "./reset-development-form";
+import { ClearTestOrdersForm } from "./clear-test-orders-form";
 
 export default async function SettingsPage({
   searchParams,
@@ -93,6 +94,7 @@ export default async function SettingsPage({
               {process.env.NODE_ENV === "development" ? (
                 <ResetDevelopmentForm />
               ) : null}
+              <ClearTestOrdersForm />
             </div>
           ) : adminCredentials.configurationError ? (
             <div className="mt-4 rounded-lg border border-red-500/30 bg-red-950/20 p-4 text-sm text-red-200">

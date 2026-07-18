@@ -10,6 +10,8 @@ export interface CutMarkSettings {
   thicknessMm: number;
 }
 
+export type ArtworkSize = { width: number; height: number };
+
 const safeNumber = (value: number, fallback: number) =>
   Number.isFinite(value) && value >= 0 ? value : fallback;
 
@@ -34,6 +36,7 @@ export function cutMarksSvg(
   settingsInput: Partial<CutMarkSettings> | null | undefined,
   occupiedSlots: number,
   dpi: number = A4_SHEET.dpi,
+  artworkSizes?: [ArtworkSize?, ArtworkSize?],
 ) {
   const settings = normalizeCutMarkSettings(settingsInput);
   if (settings.mode === "NONE" || occupiedSlots < 1) return null;
@@ -43,10 +46,11 @@ export function cutMarksSvg(
   const stroke = mmToPixels(settings.thicknessMm, dpi);
   const marks: string[] = [];
   for (let slot = 0; slot < Math.min(occupiedSlots, 2); slot += 1) {
-    const top = (slot === 0 ? layout.design1Y : layout.design2Y) + offset;
-    const bottom = (slot === 0 ? layout.design1Y : layout.design2Y) + SHEET_LAYOUT.designHeightPx - offset;
-    const left = offset;
-    const right = SHEET_LAYOUT.designWidthPx - offset;
+    const size = artworkSizes?.[slot] ?? { width: SHEET_LAYOUT.designWidthPx, height: SHEET_LAYOUT.designHeightPx };
+    const left = Math.round((SHEET_LAYOUT.designWidthPx - size.width) / 2) + offset;
+    const right = Math.round((SHEET_LAYOUT.designWidthPx - size.width) / 2) + size.width - offset;
+    const top = (slot === 0 ? layout.design1Y : layout.design2Y) + Math.round((SHEET_LAYOUT.designHeightPx - size.height) / 2) + offset;
+    const bottom = (slot === 0 ? layout.design1Y : layout.design2Y) + Math.round((SHEET_LAYOUT.designHeightPx - size.height) / 2) + size.height - offset;
     if (settings.mode === "FULL_OUTLINE") {
       marks.push(line(left, top, right, top), line(right, top, right, bottom), line(right, bottom, left, bottom), line(left, bottom, left, top));
     } else {
@@ -83,14 +87,20 @@ export async function composeA4PrintSheet(
   occupiedSlots = 2,
 ) {
   const layout = sheetLayout();
+  const artworkSizes = await Promise.all(
+    artwork.map(async (input) => {
+      const metadata = await sharp(input).metadata();
+      return { width: metadata.width ?? SHEET_LAYOUT.designWidthPx, height: metadata.height ?? SHEET_LAYOUT.designHeightPx };
+    }),
+  ) as [ArtworkSize, ArtworkSize];
   const composites: Array<{ input: Buffer; left: number; top: number }> = [
-    { input: artwork[0], left: 0, top: layout.design1Y },
-    { input: artwork[1], left: 0, top: layout.design2Y },
+    { input: artwork[0], left: Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[0].width) / 2), top: layout.design1Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[0].height) / 2) },
+    { input: artwork[1], left: Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[1].width) / 2), top: layout.design2Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[1].height) / 2) },
   ];
   if (strips) {
     composites.push({ input: strips[0], left: 0, top: layout.strip1Y }, { input: strips[1], left: 0, top: layout.strip2Y });
   }
-  const marks = cutMarksSvg(cutMarks, occupiedSlots, A4_SHEET.dpi);
+  const marks = cutMarksSvg(cutMarks, occupiedSlots, A4_SHEET.dpi, artworkSizes);
   if (marks) composites.push({ input: marks, left: 0, top: 0 });
   return sharp({ create: { width: SHEET_LAYOUT.widthPx, height: SHEET_LAYOUT.heightPx, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).withMetadata({ density: A4_SHEET.dpi }).png().toBuffer();
 }

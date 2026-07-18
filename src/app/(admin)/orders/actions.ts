@@ -10,11 +10,12 @@ import {
   addPayment,
   updateCommittedItemQuantity,
   recordProductionIncident,
+  releaseUnconsumedOrderStock,
 } from "@/lib/orders/service";
 import { PRODUCTION_INCIDENT_REASONS, OTHER_MATERIAL_WASTE_OPTIONS } from "@/lib/orders/production-incident-options";
 import { prisma } from "@/lib/db/prisma";
 import { saveUploadedFile } from "@/lib/files/local-file-storage";
-import { saveArtworkFile } from "@/lib/files/artwork-storage";
+import { getOrderArtworkDirectory, saveArtworkFile } from "@/lib/files/artwork-storage";
 import { requireAdmin } from "@/lib/admin-session";
 import { correctMaterialConsumption } from "@/lib/production/recipes";
 import { mkdir, writeFile, rm } from "node:fs/promises";
@@ -150,13 +151,13 @@ export async function createOrderAction(
       for (const [index, item] of order.items.entries()) {
         const file = formData.get(`artwork-${index}`);
         if (!(file instanceof File) || file.size === 0) continue;
-        const relative = await saveArtworkFile(file, order.orderNumber, "original", order.createdAt.getFullYear(), order.createdAt.getMonth() + 1);
+        const relative = await saveArtworkFile(file, order.orderNumber, "original", order.createdAt.getFullYear(), order.createdAt.getMonth() + 1, customer?.fullName);
         savedArtworkPaths.push(relative);
         await prisma.orderItem.update({ where: { id: item.id }, data: { customerArtworkPath: relative } });
         await prisma.orderFile.create({ data: { orderId: order.id, originalFilename: file.name, storagePath: relative, mimeType: file.type, sizeBytes: file.size } });
       }
     } catch (error) {
-      await Promise.all(savedArtworkPaths.map((relative) => rm(path.resolve(process.cwd(), relative), { force: true })));
+      await Promise.all(savedArtworkPaths.map((storedPath) => rm(storedPath, { force: true })));
       await prisma.order.delete({ where: { id: order.id } }).catch(() => undefined);
       console.error("New order artwork upload failed", error);
       return { message: "The order was not saved because an artwork file could not be stored. Please try again." };
@@ -390,7 +391,7 @@ export async function uploadArtworkAction(formData: FormData) {
   if (!(file instanceof File)) throw new Error("Choose an image.");
   const item = await prisma.orderItem.findUnique({
     where: { id: orderItemId },
-    include: { order: true },
+    include: { order: { include: { customer: true } } },
   });
   if (!item) throw new Error("ORDER_ITEM_NOT_FOUND");
   const now = new Date();
@@ -400,6 +401,7 @@ export async function uploadArtworkAction(formData: FormData) {
     "original",
     now.getFullYear(),
     now.getMonth() + 1,
+    item.order.customer.fullName,
   );
   await prisma.orderItem.update({
     where: { id: item.id },
@@ -412,10 +414,10 @@ export async function uploadArtworkLayerAction(formData: FormData) {
   const orderItemId = String(formData.get("orderItemId") ?? "");
   const file = formData.get("file");
   if (!(file instanceof File)) throw new Error("Choose an image.");
-  const item = await prisma.orderItem.findUnique({ where: { id: orderItemId }, include: { order: true } });
+  const item = await prisma.orderItem.findUnique({ where: { id: orderItemId }, include: { order: { include: { customer: true } } } });
   if (!item) throw new Error("ORDER_ITEM_NOT_FOUND");
   const now = new Date();
-  const relative = await saveArtworkFile(file, item.order.orderNumber, "original", now.getFullYear(), now.getMonth() + 1);
+  const relative = await saveArtworkFile(file, item.order.orderNumber, "original", now.getFullYear(), now.getMonth() + 1, item.order.customer.fullName);
   await prisma.orderFile.create({ data: { orderId: item.orderId, originalFilename: file.name, storagePath: relative, mimeType: file.type, sizeBytes: file.size } });
   return relative;
 }
@@ -430,7 +432,7 @@ export async function saveArtworkExportAction(formData: FormData) {
   const positionY = Number(formData.get("positionY"));
   const item = await prisma.orderItem.findUnique({
     where: { id: itemId },
-    include: { order: true, productVariant: { include: { product: { include: { printTemplate: true } } } } },
+    include: { order: { include: { customer: true } }, productVariant: { include: { product: { include: { printTemplate: true } } } } },
   });
   const templateDpi = item?.productVariant?.product.printTemplate?.dpi;
   if (
@@ -445,14 +447,7 @@ export async function saveArtworkExportAction(formData: FormData) {
   )
     throw new Error("ARTWORK_EXPORT_INVALID");
   if (dataUrl.length > 50 * 1024 * 1024) throw new Error("ARTWORK_EXPORT_TOO_LARGE");
-  const folder = path.join(
-    process.cwd(),
-    "uploads",
-    String(new Date().getFullYear()),
-    String(new Date().getMonth() + 1).padStart(2, "0"),
-    item.order.orderNumber,
-    "print-ready",
-  );
+  const folder = await getOrderArtworkDirectory(item.order.orderNumber, "print-ready", item.order.customer.fullName);
   try {
     await mkdir(folder, { recursive: true });
   } catch (error) {
@@ -481,9 +476,7 @@ export async function saveArtworkExportAction(formData: FormData) {
     console.error("Artwork export file write failed", error);
     throw new Error("Unable to save the print-ready PNG. Check upload folder permissions and available disk space.");
   }
-  const relative = path
-    .relative(process.cwd(), path.join(folder, filename))
-    .replaceAll(path.sep, "/");
+  const storedPath = path.join(folder, filename);
   const project = await prisma.artworkProject.upsert({
     where: { orderItemId: itemId },
     update: { zoom, rotation, positionX, positionY },
@@ -500,8 +493,8 @@ export async function saveArtworkExportAction(formData: FormData) {
     data: {
       projectId: project.id,
       version,
-      editedPath: relative,
-      printReadyPath: relative,
+      editedPath: storedPath,
+      printReadyPath: storedPath,
       widthPx,
       heightPx,
     },
@@ -634,6 +627,11 @@ export async function permanentlyDeleteOrderAction(formData: FormData) {
       await tx.adminAuditLog.create({ data: { action: "permanent_order_delete", orderNumber: order.orderNumber, success: false, reason: "Order number confirmation did not match" } });
       throw new Error("ORDER_DELETE_CONFIRMATION_MISMATCH");
     }
+
+    // A Ready-to-Print test order may have reserved blank stock without ever
+    // entering production. Release that reservation before deleting the order.
+    // Orders with production activity or material consumption remain untouched.
+    await releaseUnconsumedOrderStock(tx, id);
 
     const itemIds = order.items.map((item) => item.id);
     const attemptIds = (await tx.productionAttempt.findMany({ where: { orderItemId: { in: itemIds } }, select: { id: true } })).map((item) => item.id);

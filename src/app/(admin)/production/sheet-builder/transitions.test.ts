@@ -150,7 +150,7 @@ describe("Print Sheet Builder Transitions Integration Tests", () => {
     });
     orderId = order.id;
 
-    expect(order.status).toBe("draft");
+    expect(order.status).toBe("Draft");
     const item = order.items[0]!;
 
     const project = await prisma.artworkProject.create({

@@ -18,6 +18,72 @@ export async function initializeAdminAction(formData: FormData) {
 export async function adminLogoutAction() { await clearAdminSession(); redirect("/settings?admin=locked"); }
 export type ResetDevelopmentResult = { ok: boolean; message: string; counts?: Record<string, number> };
 
+export async function clearTestOrdersAction(_previous: ResetDevelopmentResult | null, formData: FormData): Promise<ResetDevelopmentResult> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { ok: false, message: "Admin Mode is required." };
+  }
+  const confirmation = String(formData.get("clearTestOrdersConfirmation") ?? "").trim();
+  if (confirmation !== "CLEAR TEST ORDERS") return { ok: false, message: "Type CLEAR TEST ORDERS to continue." };
+
+  const { prisma } = await import("@/lib/db/prisma");
+  const [files, projects, versions, sheets] = await Promise.all([
+    prisma.orderFile.findMany({ select: { storagePath: true } }),
+    prisma.artworkProject.findMany({ select: { originalPath: true } }),
+    prisma.artworkVersion.findMany({ select: { editedPath: true, printReadyPath: true } }),
+    prisma.printSheet.findMany({ select: { storagePath: true } }),
+  ]);
+  try {
+    const counts = await prisma.$transaction(async (tx) => {
+      const inventoryReset = await clearInventoryForDevelopmentReset(tx);
+      const sheetSlots = await tx.printSheetSlot.deleteMany();
+      const sheetEvents = await tx.printSheetEvent.deleteMany();
+      const incidents = await tx.productionIncident.deleteMany();
+      const attempts = await tx.productionAttempt.deleteMany();
+      const payments = await tx.payment.deleteMany();
+      const orderFiles = await tx.orderFile.deleteMany();
+      const versionsDeleted = await tx.artworkVersion.deleteMany();
+      const projectsDeleted = await tx.artworkProject.deleteMany();
+      const sheetsDeleted = await tx.printSheet.deleteMany();
+      const items = await tx.orderItem.deleteMany();
+      const orders = await tx.order.deleteMany();
+      const sequences = await tx.sequence.deleteMany({ where: { key: { in: ["order-global", "print-sheet-number"] } } });
+      return {
+        materialConsumptions: inventoryReset.materialConsumptions,
+        stockMovements: inventoryReset.stockMovements,
+        inventoryTransactions: inventoryReset.inventoryTransactions,
+        sheetSlots: sheetSlots.count,
+        sheetEvents: sheetEvents.count,
+        incidents: incidents.count,
+        attempts: attempts.count,
+        payments: payments.count,
+        orderFiles: orderFiles.count,
+        artworkVersions: versionsDeleted.count,
+        artworkProjects: projectsDeleted.count,
+        printSheets: sheetsDeleted.count,
+        orderItems: items.count,
+        orders: orders.count,
+        customers: 0,
+        sequences: sequences.count,
+      };
+    });
+    let fileErrors = 0;
+    const { rm } = await import("node:fs/promises");
+    for (const storedPath of [...files.map((file) => file.storagePath), ...projects.map((project) => project.originalPath), ...versions.flatMap((version) => [version.editedPath, version.printReadyPath]), ...sheets.map((sheet) => sheet.storagePath)]) {
+      try { await rm(storedPath, { force: true }); } catch { fileErrors += 1; }
+    }
+    revalidatePath("/settings");
+    revalidatePath("/dashboard");
+    revalidatePath("/orders");
+    revalidatePath("/production");
+    revalidatePath("/customers");
+    return { ok: fileErrors === 0, message: fileErrors === 0 ? "Test orders and stored artwork were cleared." : `Database cleared, but ${fileErrors} file(s) could not be removed.`, counts: { ...counts, fileErrors } };
+  } catch {
+    return { ok: false, message: "Test-order cleanup could not complete. No database data was changed." };
+  }
+}
+
 export async function resetDevelopmentDataAction(_previous: ResetDevelopmentResult | null, formData: FormData): Promise<ResetDevelopmentResult> {
   if (process.env.NODE_ENV !== "development") return { ok: false, message: "Reset is available only in development mode." };
   try {
@@ -228,7 +294,7 @@ export async function restoreFromHistoryAction(id: string, remapOrders?: string,
   const { history } = await getBackupData();
   const backup = history.find((b) => b.id === id);
   if (!backup) {
-    redirect("/settings?restore=notfound");
+    return { success: false, error: "Backup snapshot was not found." };
   }
   const res = await restoreBackup(backup.filePath, {
     remapOrdersFolder: remapOrders || undefined,
@@ -236,9 +302,9 @@ export async function restoreFromHistoryAction(id: string, remapOrders?: string,
   });
   if (res.success) {
     await clearAdminSession();
-    redirect("/settings?restore=success&admin=locked");
+    return { success: true };
   } else {
-    redirect(`/settings?restore=failed&error=${encodeURIComponent(res.error || "Restore failed")}`);
+    return { success: false, error: res.error || "Restore failed." };
   }
 }
 
@@ -249,7 +315,7 @@ export async function restoreFromPathAction(formData: FormData) {
   const remapSheets = String(formData.get("remapSheetsFolder") ?? "").trim();
 
   if (!archivePath) {
-    redirect("/settings?restore=invalidpath");
+    return { success: false, error: "Enter a backup archive path." };
   }
 
   const res = await restoreBackup(archivePath, {
@@ -258,8 +324,8 @@ export async function restoreFromPathAction(formData: FormData) {
   });
   if (res.success) {
     await clearAdminSession();
-    redirect("/settings?restore=success&admin=locked");
+    return { success: true };
   } else {
-    redirect(`/settings?restore=failed&error=${encodeURIComponent(res.error || "Restore failed")}`);
+    return { success: false, error: res.error || "Restore failed." };
   }
 }

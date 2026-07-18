@@ -1,11 +1,12 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { readdir } from "node:fs/promises";
+import { readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { prisma } from "@/lib/db/prisma";
 import { orderItemReference } from "@/lib/orders/item-reference";
+import { resolveStoredArtworkPath } from "@/lib/order-storage";
 import {
   copyPrintSheetFile,
   nextPrintSheetNumber,
@@ -109,6 +110,52 @@ export async function cancelPrintSheetAction(formData: FormData) {
   revalidatePath("/production/sheets");
   revalidatePath(`/production/sheets/${value}`);
   redirect(`/production/sheets/${value}?saved=cancelled`);
+}
+
+/**
+ * Removes a generated sheet from history without reversing immutable stock or
+ * material-consumption records. Active production assignments are safely
+ * returned to the queue before the sheet record is removed.
+ */
+export async function deleteGeneratedPrintSheetAction(formData: FormData) {
+  const value = sheetId(formData);
+  const sheet = await prisma.printSheet.findUnique({
+    where: { id: value },
+    include: { slots: true },
+  });
+  if (!sheet) throw new Error("SHEET_NOT_FOUND");
+  const file = await resolvePrintSheetPath(sheet.storagePath);
+
+  await prisma.$transaction(async (tx) => {
+    const activeAttemptIds = sheet.slots
+      .filter((slot) => slot.assignmentState === "ACTIVE" && slot.productionAttemptId)
+      .map((slot) => slot.productionAttemptId!);
+    if (activeAttemptIds.length) {
+      await tx.productionAttempt.updateMany({
+        where: { id: { in: activeAttemptIds }, status: { not: "Failed" } },
+        data: { status: "Ready to Print" },
+      });
+    }
+
+    // Preserve immutable inventory/material history while removing the sheet
+    // relationship that would otherwise prevent a safe delete.
+    await tx.productionMaterialConsumption.updateMany({
+      where: { printSheetId: value },
+      data: { printSheetId: null },
+    });
+    await tx.printSheet.updateMany({
+      where: { sourceSheetId: value },
+      data: { sourceSheetId: null },
+    });
+    await tx.printSheet.delete({ where: { id: value } });
+  });
+
+  // The database is authoritative. A missing file is already a successful
+  // history deletion; an undeletable file can be cleaned up separately.
+  await unlink(file.resolved).catch(() => undefined);
+  revalidatePath("/production/sheets");
+  revalidatePath("/production/sheets/queue");
+  redirect("/production/sheets?view=history&deleted=1");
 }
 
 export async function cancelPrintSheetAndReleaseAction(formData: FormData) {
@@ -220,10 +267,8 @@ export async function recreatePrintSheetFileAction(formData: FormData) {
     )) {
       const relative =
         slot.artworkVersion.printReadyPath || slot.artworkVersion.editedPath;
-      const resolved = path.resolve(process.cwd(), relative);
-      const uploadsRoot = path.resolve(process.cwd(), "uploads");
-      if (!resolved.startsWith(`${uploadsRoot}${path.sep}`))
-        throw new Error("INVALID_ARTWORK_PATH");
+      const resolved = await resolveStoredArtworkPath(relative);
+      if (!resolved) throw new Error("INVALID_ARTWORK_PATH");
       artwork.push(
         await mirrorArtworkForSheet(await sharp(resolved).png().toBuffer()),
       );

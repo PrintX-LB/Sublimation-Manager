@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db/prisma";
-import { SHEET_LAYOUT } from "@/lib/production-sheet";
+import { SHEET_LAYOUT, mmToPixels } from "@/lib/production-sheet";
 import { SheetBuilderForm } from "./sheet-builder-form";
 
 export const dynamic = "force-dynamic";
@@ -14,8 +14,6 @@ export async function ManualSheetBuilderContent({
   // Load compatible artwork versions
   const versions = await prisma.artworkVersion.findMany({
     where: {
-      widthPx: SHEET_LAYOUT.designWidthPx,
-      heightPx: SHEET_LAYOUT.designHeightPx,
       project: {
         orderItem: {
           order: {
@@ -33,6 +31,7 @@ export async function ManualSheetBuilderContent({
       },
       project: {
         include: {
+          template: true,
           orderItem: {
             include: {
               order: {
@@ -40,7 +39,7 @@ export async function ManualSheetBuilderContent({
                   customer: true,
                 },
               },
-              productVariant: true,
+              productVariant: { include: { product: { include: { printTemplate: true } } } },
             },
           },
         },
@@ -49,6 +48,11 @@ export async function ManualSheetBuilderContent({
     orderBy: {
       createdAt: "desc",
     },
+  });
+  const compatibleVersions = versions.filter((version) => {
+    const template = version.project.template ?? version.project.orderItem.productVariant?.product.printTemplate;
+    if (!template) return false;
+    return version.widthPx === mmToPixels(Number(template.widthMm), template.dpi) && version.heightPx === mmToPixels(Number(template.heightMm), template.dpi) && version.widthPx <= SHEET_LAYOUT.designWidthPx && version.heightPx <= SHEET_LAYOUT.designHeightPx;
   });
 
   // Load created sheet if redirect parameter is present
@@ -60,7 +64,7 @@ export async function ManualSheetBuilderContent({
   }
 
   // Convert Decimal models to plain numbers/strings to satisfy Next.js client component boundary serialization
-  const serializedVersions = versions.map((v) => ({
+  const serializedVersions = compatibleVersions.map((v) => ({
     id: v.id,
     version: v.version,
     editedPath: v.editedPath,

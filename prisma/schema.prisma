@@ -237,7 +237,7 @@ model Order {
   id          String      @id @default(uuid())
   orderNumber String      @unique
   customerId  String
-  status      String      @default("draft")
+  status      String      @default("Draft")
   dueDate     DateTime?
   deliveryMethod String?
   subtotal    Decimal     @default(0)

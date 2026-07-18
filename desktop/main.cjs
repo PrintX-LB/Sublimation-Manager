@@ -31,6 +31,7 @@ function resolveRuntimePaths() {
     databaseDir: path.join(root, "database"),
     databaseFile: path.join(root, "database", "printx.db"),
     ordersDir: path.join(root, "storage", "orders"),
+    artworkDir: path.join(root, "uploads"),
     sheetsDir: path.join(root, "storage", "print-sheets"),
     attachmentsDir: path.join(root, "storage", "attachments"),
     backupsDir: path.join(root, "backups"),
@@ -65,7 +66,7 @@ function toPrismaFileUrl(filePath) {
 
 function ensureRuntimeDirectories() {
   runtimePaths = resolveRuntimePaths();
-  for (const directory of [runtimePaths.databaseDir, runtimePaths.ordersDir, runtimePaths.sheetsDir, runtimePaths.attachmentsDir, runtimePaths.backupsDir, runtimePaths.logsDir, runtimePaths.configDir, runtimePaths.tempDir]) {
+  for (const directory of [runtimePaths.databaseDir, runtimePaths.ordersDir, runtimePaths.artworkDir, runtimePaths.sheetsDir, runtimePaths.attachmentsDir, runtimePaths.backupsDir, runtimePaths.logsDir, runtimePaths.configDir, runtimePaths.tempDir]) {
     mkdirSync(directory, { recursive: true });
   }
   if (!existsSync(runtimePaths.databaseFile)) {
@@ -86,8 +87,10 @@ function desktopEnvironment() {
     DATABASE_URL: toPrismaFileUrl(runtimePaths.databaseFile),
     PRINTX_DATABASE_PATH: runtimePaths.databaseFile,
     PRINTX_STORAGE_SETTINGS_PATH: runtimePaths.storageSettingsFile,
+    PRINTX_ARTWORK_ROOT: runtimePaths.root,
     PRINTX_BACKUP_SETTINGS_PATH: runtimePaths.backupSettingsFile,
     PRINTX_BACKUP_ROOT: runtimePaths.backupsDir,
+    PRINTX_SCHEMA_MIGRATIONS_PATH: path.join(process.resourcesPath, "prisma", "migrations"),
     PRINTX_DESKTOP: "1",
     ADMIN_USERNAME: "",
     ADMIN_PASSWORD_HASH: "",
@@ -221,7 +224,13 @@ function registerIpc() {
     shell.showItemInFolder(path.resolve(value));
   });
   ipcMain.handle("printx:open-logs", (event) => { if (!isTrustedSender(event)) throw new Error("Untrusted desktop request."); return shell.openPath(runtimePaths.logsDir); });
-  ipcMain.handle("printx:restart", (event) => { if (!isTrustedSender(event)) throw new Error("Untrusted desktop request."); app.relaunch(); app.quit(); });
+  ipcMain.handle("printx:restart", (event) => {
+    if (!isTrustedSender(event)) throw new Error("Untrusted desktop request.");
+    log("Restart requested after database restore.");
+    app.relaunch();
+    app.quit();
+    return { accepted: true };
+  });
 }
 
 function createMainWindow() {

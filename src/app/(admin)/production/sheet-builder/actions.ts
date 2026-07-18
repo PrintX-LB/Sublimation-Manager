@@ -11,7 +11,7 @@ import {
   nextSheetFilename,
   sheetLayout,
 } from "@/lib/production-sheet";
-import { getPrintSheetBuilderFolder } from "@/lib/order-storage";
+import { getPrintSheetBuilderFolder, resolveStoredArtworkPath } from "@/lib/order-storage";
 import { cutMarksSvg, mirrorArtworkForSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-render";
 import { consumePhysicalPrintSheet } from "@/lib/production/recipes";
 import { nextPrintSheetNumber } from "@/lib/print-sheet-library";
@@ -99,11 +99,22 @@ export async function generateManualSheetAction(formData: FormData) {
   });
   for (const version of entries) {
     const item = version.project.orderItem;
+    const versionTemplate = item.productVariant?.product.printTemplate;
     if (item.order.status === "Cancelled")
       throw new Error("CANCELLED_ORDER_ARTWORK");
+    const templateWidthPx = versionTemplate
+      ? Math.round((Number(versionTemplate.widthMm) * versionTemplate.dpi) / 25.4)
+      : version.widthPx;
+    const templateHeightPx = versionTemplate
+      ? Math.round((Number(versionTemplate.heightMm) * versionTemplate.dpi) / 25.4)
+      : version.heightPx;
     if (
-      version.widthPx !== SHEET_LAYOUT.designWidthPx ||
-      version.heightPx !== SHEET_LAYOUT.designHeightPx
+      version.widthPx < 1 ||
+      version.heightPx < 1 ||
+      version.widthPx > SHEET_LAYOUT.designWidthPx ||
+      version.heightPx > SHEET_LAYOUT.designHeightPx ||
+      version.widthPx !== templateWidthPx ||
+      version.heightPx !== templateHeightPx
     )
       throw new Error("ARTWORK_DIMENSIONS_INVALID");
     // Ensure we are transition editing with valid saved/exported version files
@@ -114,21 +125,23 @@ export async function generateManualSheetAction(formData: FormData) {
       throw new Error("INVALID_ARTWORK_PATH");
     }
   }
+  const artworkSizes: Array<{ width: number; height: number }> = [];
   const buffers = await Promise.all(
-    entries.map(async (version) => {
+    entries.map(async (version, index) => {
       const relative =
         (includeContour ? version.printReadyPath : version.editedPath) ||
         version.printReadyPath;
-      const resolved = path.resolve(process.cwd(), relative);
-      const uploadsRoot = path.resolve(process.cwd(), "uploads");
-      if (!resolved.startsWith(`${uploadsRoot}${path.sep}`))
-        throw new Error("INVALID_ARTWORK_PATH");
+      const resolved = await resolveStoredArtworkPath(relative);
+      if (!resolved) throw new Error("INVALID_ARTWORK_PATH");
       const metadata = await sharp(resolved).metadata();
       if (
-        metadata.width !== SHEET_LAYOUT.designWidthPx ||
-        metadata.height !== SHEET_LAYOUT.designHeightPx
+        !metadata.width ||
+        !metadata.height ||
+        metadata.width > SHEET_LAYOUT.designWidthPx ||
+        metadata.height > SHEET_LAYOUT.designHeightPx
       )
         throw new Error("ARTWORK_DIMENSIONS_INVALID");
+      artworkSizes[index] = { width: metadata.width, height: metadata.height };
       return mirrorArtworkForSheet(await sharp(resolved).png().toBuffer());
     }),
   );
@@ -145,6 +158,7 @@ export async function generateManualSheetAction(formData: FormData) {
         .png()
         .toBuffer(),
     );
+  if (!second) artworkSizes.push({ width: SHEET_LAYOUT.designWidthPx, height: SHEET_LAYOUT.designHeightPx });
   const printSheetsBase = await getPrintSheetBuilderFolder();
 
   // Choose save sub-folder structure
@@ -169,10 +183,10 @@ export async function generateManualSheetAction(formData: FormData) {
   const filename = nextSheetFilename(requested || defaultName, existing);
   const layout = sheetLayout();
   const overlays: Array<{ input: Buffer; left: number; top: number }> = [
-    { input: buffers[0]!, left: 0, top: layout.design1Y },
-    { input: buffers[1]!, left: 0, top: layout.design2Y },
+    { input: buffers[0]!, left: Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[0]!.width) / 2), top: layout.design1Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[0]!.height) / 2) },
+    { input: buffers[1]!, left: Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[1]!.width) / 2), top: layout.design2Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[1]!.height) / 2) },
   ];
-  if (includeStrips)
+  if (includeStrips) {
     entries.forEach((version, index) => {
       const item = version.project.orderItem;
       const svg = stripSvg([
@@ -188,9 +202,10 @@ export async function generateManualSheetAction(formData: FormData) {
         left: 0,
         top: index === 0 ? layout.strip1Y : layout.strip2Y,
       });
-  const marks = cutMarksSvg(cutMarks, entries.length, A4_SHEET.dpi);
-  if (marks) overlays.push({ input: marks, left: 0, top: 0 });
     });
+  }
+  const marks = cutMarksSvg(cutMarks, entries.length, A4_SHEET.dpi, [artworkSizes[0], artworkSizes[1]]);
+  if (marks) overlays.push({ input: marks, left: 0, top: 0 });
   const output = await sharp({
     create: {
       width: SHEET_LAYOUT.widthPx,
