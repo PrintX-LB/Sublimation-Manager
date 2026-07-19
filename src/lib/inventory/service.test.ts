@@ -4,6 +4,7 @@ import {
   changeInventoryQuantity,
   removeOrArchiveInventoryItemInTransaction,
   updateInventoryItemInTransaction,
+  restoreInventoryItemInTransaction,
 } from "@/lib/inventory/service";
 
 function txFor(quantity = "10", unit = "SHEET") {
@@ -76,18 +77,16 @@ describe("central inventory quantity service", () => {
     expect(tx.inventoryItem.updateMany).not.toHaveBeenCalled();
   });
 
-  it("rejects fractional quantities for legacy unit labels too", async () => {
+  it("allows decimal quantities for metre-based consumables", async () => {
     const tx = txFor("18.5", "METRE");
-    await expect(
-      changeInventoryQuantity(tx, {
-        inventoryItemId: "item-1",
-        delta: "1.25",
-        transactionType: "PURCHASE",
-        reason: "Tape delivery",
-        unit: "METRE",
-      }),
-    ).rejects.toThrow("WHOLE_UNIT_REQUIRED");
-    expect(tx.inventoryTransaction.create).not.toHaveBeenCalled();
+    await changeInventoryQuantity(tx, {
+      inventoryItemId: "item-1",
+      delta: "1.25",
+      transactionType: "PURCHASE",
+      reason: "Tape delivery",
+      unit: "METRE",
+    });
+    expect(tx.inventoryTransaction.create).toHaveBeenCalled();
   });
 });
 
@@ -127,6 +126,25 @@ const materialUpdate = {
 };
 
 describe("material metadata lifecycle", () => {
+  it("restores an archived material", async () => {
+    const tx = materialTx();
+    (tx.inventoryItem.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: materialUpdate.id,
+      inventoryType: "PRODUCTION_SUPPLY",
+      isActive: false,
+    });
+    (tx.inventoryItem.update as ReturnType<typeof vi.fn>).mockResolvedValue({
+      id: materialUpdate.id,
+      name: "A4 Premium Paper",
+    });
+    const result = await restoreInventoryItemInTransaction(tx, { id: materialUpdate.id });
+    expect(result.mode).toBe("restored");
+    expect(tx.inventoryItem.update).toHaveBeenCalledWith({
+      where: { id: materialUpdate.id },
+      data: { isActive: true },
+    });
+  });
+
   it("updates metadata without allowing direct quantity edits", async () => {
     const tx = materialTx();
     await updateInventoryItemInTransaction(tx, materialUpdate);

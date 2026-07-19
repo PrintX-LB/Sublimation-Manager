@@ -145,7 +145,7 @@ describe("Print Sheet Builder Transitions Integration Tests", () => {
       discountValue: "0",
       deliveryCharge: "0",
       items: [
-        { variantId, quantity: 1, discountType: "fixed", discountValue: "0" },
+        { variantId, quantity: 4, discountType: "fixed", discountValue: "0" },
       ],
     });
     orderId = order.id;

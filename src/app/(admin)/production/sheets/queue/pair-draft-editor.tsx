@@ -5,137 +5,55 @@ import type { PairingAttempt } from "@/lib/production/sheet-pairing";
 import { orderItemReference } from "@/lib/orders/item-reference";
 
 export function PairDraftEditor({
-  first,
-  second,
+  slots: initialSlots,
+  maxSlots,
   candidates,
   generateAction,
 }: {
-  first: PairingAttempt;
-  second: PairingAttempt;
+  slots: PairingAttempt[];
+  maxSlots: number;
   candidates: PairingAttempt[];
   generateAction: (formData: FormData) => void;
 }) {
-  const [slots, setSlots] = useState<
-    [PairingAttempt | null, PairingAttempt | null]
-  >([first, second]);
+  const [slots, setSlots] = useState<Array<PairingAttempt | null>>(initialSlots);
   const [generationRequestKey] = useState(() => crypto.randomUUID());
+  const first = slots[0] ?? initialSlots[0]!;
   const replacementOptions = useMemo(() => {
-    const used = new Set(
-      slots
-        .filter((item): item is PairingAttempt => Boolean(item))
-        .map((item) => item.id),
-    );
-    return candidates.filter(
-      (candidate) =>
-        candidate.compatibilityKey === first.compatibilityKey &&
-        !used.has(candidate.id),
-    );
+    const used = new Set(slots.filter((item): item is PairingAttempt => Boolean(item)).map((item) => item.id));
+    return candidates.filter((candidate) => candidate.compatibilityKey === first.compatibilityKey && !used.has(candidate.id));
   }, [candidates, first.compatibilityKey, slots]);
-  const swap = () => setSlots(([one, two]) => [two, one]);
-  const replace = (index: 0 | 1, value: string) =>
-    setSlots((current) => {
-      const next = [...current] as [
-        PairingAttempt | null,
-        PairingAttempt | null,
-      ];
-      next[index] =
-        candidates.find((candidate) => candidate.id === value) ?? null;
-      return next;
-    });
+  const replace = (index: number, value: string) => setSlots((current) => current.map((slot, slotIndex) => slotIndex === index ? candidates.find((candidate) => candidate.id === value) ?? null : slot));
+  const remove = (index: number) => setSlots((current) => current.map((slot, slotIndex) => slotIndex === index ? null : slot));
+  const addSlot = () => setSlots((current) => [...current, null]);
   return (
-    <form
-      action={generateAction}
-      className="rounded-xl border border-slate-700 bg-slate-950/50 p-3"
-    >
+    <form action={generateAction} className="rounded-xl border border-slate-700 bg-slate-950/50 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-xs uppercase text-slate-500">
-          {first.compatibilityKey}
-        </span>
-        <button
-          type="button"
-          onClick={swap}
-          className="rounded border border-slate-700 px-2 py-1 text-xs"
-        >
-          Swap slots
-        </button>
+        <span className="text-xs uppercase text-slate-500">{first.compatibilityKey}</span>
+        {slots.length < maxSlots ? <button type="button" onClick={addSlot} className="rounded border border-slate-700 px-2 py-1 text-xs">Add slot</button> : null}
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className={`grid gap-2 ${slots.length > 2 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
         {slots.map((slot, index) => (
           <div key={index} className="rounded-lg border border-slate-800 p-2">
-            {slot ? (
-              <>
-                <p className="text-brand-200 text-xs font-semibold">
-                  Slot {index + 1} · {orderItemReference(slot.orderNumber, slot.itemSequence ?? 1)}
-                </p>
-                <p className="text-xs text-slate-300">
-                  {slot.customerName} · {slot.productName}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  Attempt {slot.attemptNumber} · {slot.priority}
-                </p>
-              </>
-            ) : (
-              <p className="text-xs text-slate-500">Empty slot</p>
-            )}
+            {slot ? <>
+              <p className="text-brand-200 text-xs font-semibold">Slot {index + 1} · {orderItemReference(slot.orderNumber, slot.itemSequence ?? 1)}{slot.remainingCount && slot.remainingCount > 1 ? ` (x${slot.remainingCount})` : ""}</p>
+              <p className="text-xs text-slate-300">{slot.customerName} · {slot.productName}</p>
+              <p className="text-[11px] text-slate-500">Attempt {slot.attemptNumber} · {slot.priority}</p>
+            </> : <p className="text-xs text-slate-500">Empty slot</p>}
             <div className="mt-2 flex gap-1">
-              <button
-                type="button"
-                onClick={() =>
-                  setSlots((current) =>
-                    index === 0 ? [current[1], null] : [current[0], null],
-                  )
-                }
-                className="rounded border border-slate-700 px-2 py-1 text-[11px]"
-              >
-                Remove
-              </button>
-              {slot ? (
-                <select
-                  value=""
-                  onChange={(event) =>
-                    replace(index as 0 | 1, event.target.value)
-                  }
-                  className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-1 py-1 text-[11px]"
-                >
-                  <option value="">Replace…</option>
-                  {replacementOptions.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {orderItemReference(candidate.orderNumber, candidate.itemSequence ?? 1)} · {candidate.customerName}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <select
-                  value=""
-                  onChange={(event) =>
-                    replace(index as 0 | 1, event.target.value)
-                  }
-                  className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-1 py-1 text-[11px]"
-                >
-                  <option value="">Add compatible transfer…</option>
-                  {replacementOptions.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {orderItemReference(candidate.orderNumber, candidate.itemSequence ?? 1)} · {candidate.customerName}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <button type="button" onClick={() => remove(index)} className="rounded border border-slate-700 px-2 py-1 text-[11px]">Remove</button>
+              <select value="" onChange={(event) => replace(index, event.target.value)} className="min-w-0 flex-1 rounded border border-slate-700 bg-slate-900 px-1 py-1 text-[11px]">
+                <option value="">{slot ? "Replace…" : "Add compatible transfer…"}</option>
+                {replacementOptions.map((candidate) => <option key={candidate.id} value={candidate.id}>{orderItemReference(candidate.orderNumber, candidate.itemSequence ?? 1)} · {candidate.customerName}</option>)}
+              </select>
             </div>
           </div>
         ))}
       </div>
-      <input type="hidden" name="attempt1" value={slots[0]?.id ?? ""} />
-      <input
-        type="hidden"
-        name="generationRequestKey"
-        value={generationRequestKey}
-      />
-      {slots[1] ? (
-        <input type="hidden" name="attempt2" value={slots[1].id} />
-      ) : null}
-      <button className="mt-3 w-full rounded bg-emerald-600 px-3 py-2 text-sm font-semibold">
-        Generate Physical Sheet
-      </button>
+      {slots[0]?.id ? <input type="hidden" name="attempt1" value={slots[0].id} /> : null}
+      {slots[1]?.id ? <input type="hidden" name="attempt2" value={slots[1].id} /> : null}
+      {slots[2]?.id ? <input type="hidden" name="attempt3" value={slots[2].id} /> : null}
+      <input type="hidden" name="generationRequestKey" value={generationRequestKey} />
+      <button disabled={!slots[0] || !slots[1]} className="mt-3 w-full rounded bg-emerald-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">Generate Physical Sheet</button>
     </form>
   );
 }

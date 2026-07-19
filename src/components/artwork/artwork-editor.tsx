@@ -156,7 +156,7 @@ export function ArtworkEditor({
       type: "rectangle",
       colour: "#000000",
       thicknessMm: 0.3,
-      offsetMm: 2,
+      offsetMm: 0,
     },
   );
   const contourRef = useRef<ContourSettings>(contour);

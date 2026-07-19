@@ -1,7 +1,7 @@
 "use server";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { readdir, unlink } from "node:fs/promises";
+import { readdir, unlink, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { prisma } from "@/lib/db/prisma";
@@ -18,6 +18,8 @@ import {
   composeA4PrintSheet,
   mirrorArtworkForSheet,
 } from "@/lib/production-sheet-render";
+import { createExactSizePdf } from "@/lib/print-pdf";
+import { A4_SHEET } from "@/lib/production-sheet";
 
 function sheetId(formData: FormData) {
   const value = String(formData.get("sheetId") ?? "").trim();
@@ -258,7 +260,13 @@ export async function recreatePrintSheetFileAction(formData: FormData) {
   } catch {
     sourceAvailable = false;
   }
-  if (sourceAvailable) await copyPrintSheetFile(sheet.storagePath, targetPath);
+  if (sourceAvailable) {
+    if (path.extname(source.resolved).toLowerCase() === ".pdf") {
+      await copyPrintSheetFile(sheet.storagePath, targetPath);
+    } else {
+      await writeFile(path.join(folder, filename), await createExactSizePdf(await readFile(source.resolved), A4_SHEET), { flag: "wx" });
+    }
+  }
   else {
     if (sheet.slots.length !== 2) throw new Error("SHEET_SLOTS_INVALID");
     const artwork: Buffer[] = [];
@@ -280,15 +288,14 @@ export async function recreatePrintSheetFileAction(formData: FormData) {
       `<svg width="${sheet.widthPx}" height="${Math.round(sheet.heightPx / 3.1)}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><rect x="2" y="2" width="${sheet.widthPx - 4}" height="${Math.round(sheet.heightPx / 3.1) - 4}" fill="none" stroke="black" stroke-width="3"/><g fill="black" font-family="Arial" font-size="36"><text x="34" y="65">${orderItemReference(slot.order.orderNumber, slot.orderItem?.itemSequence ?? 1)}</text><text x="34" y="115">${slot.order.customer.fullName}</text><text x="34" y="165">${slot.orderItem?.productNameSnapshot ?? "Artwork"}</text><text x="34" y="215">Transfer ${index + 1} of 2</text></g></svg>`,
         ),
       );
-    const { writeFile } = await import("node:fs/promises");
     await writeFile(
       path.join(folder, filename),
-      await composeA4PrintSheet(
+      await createExactSizePdf(await composeA4PrintSheet(
         [artwork[0]!, artwork[1]!],
         [strips[0]!, strips[1]!],
         { mode: sheet.cutMarkMode as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE", lengthMm: Number(sheet.cutMarkLengthMm), offsetMm: Number(sheet.cutMarkOffsetMm), thicknessMm: Number(sheet.cutMarkThicknessMm) },
         sheet.slots.length,
-      ),
+      ), A4_SHEET),
       { flag: "wx" },
     );
   }
@@ -342,7 +349,11 @@ export async function regeneratePhysicalPrintSheetAction(formData: FormData) {
   const storagePath = path
     .relative(process.cwd(), path.join(folder, filename))
     .replaceAll(path.sep, "/");
-  await copyPrintSheetFile(source.storagePath, storagePath);
+  if (path.extname(source.storagePath).toLowerCase() === ".pdf") {
+    await copyPrintSheetFile(source.storagePath, storagePath);
+  } else {
+    await writeFile(path.join(folder, filename), await createExactSizePdf(await readFile((await resolvePrintSheetPath(source.storagePath)).resolved), A4_SHEET), { flag: "wx" });
+  }
   const created = await prisma.$transaction(async (tx) => {
     const existing = await tx.printSheet.findUnique({
       where: { regenerationRequestKey: requestKey },

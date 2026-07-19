@@ -16,6 +16,9 @@ vi.mock("@/app/(admin)/inventory/items/actions", () => ({
   addInventoryStockAction: vi.fn(),
   adjustInventoryAction: vi.fn(),
   recordInventoryWasteAction: vi.fn(),
+  receiveStockContainersAction: vi.fn(),
+  restoreInventoryItemAction: vi.fn(),
+  permanentlyDeleteArchivedInventoryItemAction: vi.fn(),
 }));
 
 const item: MaterialWorkspaceItem = {
@@ -34,6 +37,9 @@ const item: MaterialWorkspaceItem = {
   recipeReferenceCount: 0,
   hasHistory: true,
   canChangeUnit: false,
+  defaultContainerCapacity: null,
+  containerLabel: null,
+  containers: [],
 };
 
 describe("MaterialsWorkspace", () => {
@@ -150,7 +156,7 @@ describe("MaterialsWorkspace", () => {
     fireEvent.change(screen.getByLabelText("Quantity to add (units)"), {
       target: { value: "5" },
     });
-    expect(screen.getByText("30 units")).toBeInTheDocument();
+    expect(screen.getByText("30 sheets")).toBeInTheDocument();
     expect(screen.getByLabelText("Purchase unit cost")).toBeInTheDocument();
     expect(
       screen.getByLabelText("Reference or invoice number"),
@@ -168,7 +174,7 @@ describe("MaterialsWorkspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "Adjust" }));
     const adjustment = screen.getByLabelText("Adjustment quantity (units)");
     fireEvent.change(adjustment, { target: { value: "-2" } });
-    expect(screen.getByText("23 units")).toBeInTheDocument();
+    expect(screen.getByText("23 sheets")).toBeInTheDocument();
     fireEvent.change(adjustment, { target: { value: "-30" } });
     expect(
       screen.getByText("The adjustment cannot make stock negative."),

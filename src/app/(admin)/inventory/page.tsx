@@ -30,7 +30,7 @@ import {
 } from "@/app/(admin)/products/actions";
 import { getAdminSession } from "@/lib/admin-session";
 import {
-  inventoryQuantityLabel,
+  formatInventoryQuantity,
   type InventoryUnit,
 } from "@/lib/inventory/materials";
 
@@ -57,8 +57,8 @@ export default async function InventoryPage({
         : requestedTab;
 
   const tabs = [
-    { id: "products", label: "Products", icon: Package },
     { id: "stock", label: "Stock", icon: Boxes },
+    { id: "products", label: "Products", icon: Package },
     { id: "materials", label: "Materials & Supplies", icon: FlaskConical },
     { id: "transactions", label: "Transactions", icon: History },
     { id: "categories", label: "Categories", icon: FolderTree },
@@ -543,7 +543,7 @@ async function TransactionsTab() {
     })
   ).map((transaction) => ({
     ...transaction,
-    unit: inventoryQuantityLabel(transaction.quantityChange.toString()),
+    displayChange: formatInventoryQuantity(transaction.quantityChange.toString(), transaction.unit),
   }));
   const movements = await prisma.stockMovement.findMany({
     where: {
@@ -632,11 +632,11 @@ async function TransactionsTab() {
                   className={`px-4 py-3 text-right font-semibold ${transaction.quantityChange.greaterThan(0) ? "text-emerald-400" : "text-rose-400"}`}
                 >
                   {transaction.quantityChange.greaterThan(0) ? "+" : ""}
-                  {transaction.quantityChange.toString()} {transaction.unit}
+                  {transaction.displayChange}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-slate-500">
-                  {transaction.quantityBefore.toString()} →{" "}
-                  {transaction.quantityAfter.toString()}
+                  {formatInventoryQuantity(transaction.quantityBefore.toString(), transaction.unit)} →{" "}
+                  {formatInventoryQuantity(transaction.quantityAfter.toString(), transaction.unit)}
                 </td>
                 <td className="px-4 py-3 text-slate-400">
                   {transaction.reason}
@@ -766,6 +766,9 @@ async function MaterialsTab({ statusParam }: { statusParam?: string }) {
         notes: true,
         isActive: true,
         productVariantId: true,
+        defaultContainerCapacity: true,
+        containerLabel: true,
+        containers: { orderBy: { receivedAt: "asc" } },
         _count: { select: { transactions: true, recipeItems: true } },
       },
       orderBy: { name: "asc" },
@@ -795,6 +798,16 @@ async function MaterialsTab({ statusParam }: { statusParam?: string }) {
       hasHistory,
       canChangeUnit:
         item._count.transactions === 0 && item._count.recipeItems === 0,
+      defaultContainerCapacity: item.defaultContainerCapacity?.toString() ?? null,
+      containerLabel: item.containerLabel,
+      containers: item.containers.map((container) => ({
+        id: container.id,
+        originalCapacity: container.originalCapacity.toString(),
+        remainingAmount: container.remainingAmount.toString(),
+        purchaseCost: container.purchaseCost.toString(),
+        receivedAt: container.receivedAt.toISOString(),
+        status: container.status as "SEALED" | "OPEN" | "DEPLETED",
+      })),
     };
   });
 

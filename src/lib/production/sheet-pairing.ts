@@ -1,7 +1,11 @@
 import { mmToPixels } from "@/lib/production-sheet";
 
 export type PairingAttempt = {
-  id: string; attemptNumber: number; status: string; createdAt: Date; orderNumber: string; orderId: string; orderItemId?: string; itemSequence?: number; customerName: string; productName: string; variantName: string; dueDate: Date | null; priority: string; artworkVersionId: string; artworkPath: string; templateName: string; compatibilityKey: string; assigned: boolean;
+  id: string;
+  sourceAttemptId?: string;
+  copyNumber?: number;
+  remainingCount?: number;
+  attemptNumber: number; status: string; createdAt: Date; orderNumber: string; orderId: string; orderItemId?: string; itemSequence?: number; customerName: string; productName: string; variantName: string; dueDate: Date | null; priority: string; artworkVersionId: string; artworkPath: string; templateName: string; compatibilityKey: string; assigned: boolean;
 };
 
 export function templateCompatibilityKey(input: { widthMm: number | { toString(): string }; heightMm: number | { toString(): string }; dpi: number; name: string; mirror?: boolean; contour?: boolean; cutMarkMode?: string }) {
@@ -31,4 +35,27 @@ export function suggestPairs(items: PairingAttempt[]) {
     const [partner] = remaining.splice(partnerIndex, 1); if (partner) pairs.push([first, partner]);
   }
   return { pairs, unpaired: [...unpaired, ...remaining].sort(pairingSort) };
+}
+
+export function suggestGroups(items: PairingAttempt[], capacityFor: (item: PairingAttempt) => number = () => 2) {
+  const remaining = [...items].sort(pairingSort);
+  const groups: PairingAttempt[][] = [];
+  const unpaired: PairingAttempt[] = [];
+  while (remaining.length) {
+    const first = remaining.shift()!;
+    const capacity = Math.max(2, capacityFor(first));
+    const group = [first];
+    let currentSlots = first.remainingCount ?? 1;
+    for (let index = remaining.length - 1; index >= 0 && currentSlots < capacity; index -= 1) {
+      const candidate = remaining[index]!;
+      const candidateSlots = candidate.remainingCount ?? 1;
+      if (isCompatible(first, candidate) && currentSlots + candidateSlots <= capacity) {
+        group.push(remaining.splice(index, 1)[0]!);
+        currentSlots += candidateSlots;
+      }
+    }
+    if (group.length > 1 || currentSlots >= capacity) groups.push(group);
+    else unpaired.push(first);
+  }
+  return { groups, unpaired: unpaired.sort(pairingSort) };
 }

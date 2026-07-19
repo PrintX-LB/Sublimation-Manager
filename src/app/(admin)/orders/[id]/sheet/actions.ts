@@ -11,6 +11,7 @@ import { getPrintSheetBuilderFolder, resolveStoredArtworkPath } from "@/lib/orde
 import { cutMarksSvg, mirrorArtworkForSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-render";
 import { nextPrintSheetNumber } from "@/lib/print-sheet-library";
 import { orderItemReference } from "@/lib/orders/item-reference";
+import { createExactSizePdf } from "@/lib/print-pdf";
 
 function text(value: unknown) { return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character); }
 
@@ -57,7 +58,7 @@ export async function createA4PrintSheetAction(formData: FormData) {
   if (!sourceResolved) throw new Error("INVALID_ARTWORK_PATH");
   await mkdir(orderFolder, { recursive: true });
   const existing = await readdir(orderFolder).catch(() => [] as string[]);
-  const filename = nextSheetFilename(filenameInput || `A4_${orderItemReference(order.orderNumber, first.item.itemSequence)}_${orderItemReference(order.orderNumber, second.item.itemSequence)}.png`, existing);
+  const filename = nextSheetFilename(filenameInput || `A4_${orderItemReference(order.orderNumber, first.item.itemSequence)}_${orderItemReference(order.orderNumber, second.item.itemSequence)}.pdf`, existing);
   const images = await Promise.all(selected.map(async ({ version }) => {
     const relative = (includeContour ? version.printReadyPath : version.editedPath) || version.printReadyPath || version.editedPath;
     const resolved = await resolveStoredArtworkPath(relative);
@@ -83,7 +84,8 @@ export async function createA4PrintSheetAction(formData: FormData) {
   }
   const marks = cutMarksSvg(cutMarks, selected.length, A4_SHEET.dpi);
   if (marks) composites.push({ input: marks, left: 0, top: 0 });
-  const output = await sharp({ create: { width: SHEET_LAYOUT.widthPx, height: SHEET_LAYOUT.heightPx, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).withMetadata({ density: A4_SHEET.dpi }).png().toBuffer();
+  const previewPng = await sharp({ create: { width: SHEET_LAYOUT.widthPx, height: SHEET_LAYOUT.heightPx, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).withMetadata({ density: A4_SHEET.dpi }).png().toBuffer();
+  const output = await createExactSizePdf(previewPng, A4_SHEET);
   await import("node:fs/promises").then(({ writeFile }) => writeFile(path.join(orderFolder, filename), output, { flag: "wx" }));
   const relative = path.relative(process.cwd(), path.join(orderFolder, filename)).replaceAll(path.sep, "/");
   const sheet = await prisma.$transaction(async (tx) => {
@@ -92,7 +94,7 @@ export async function createA4PrintSheetAction(formData: FormData) {
     await tx.printSheetEvent.create({ data: { sheetId: created.id, eventType: "GENERATED", note: "A4 sheet generated from the order workspace." } });
     return created;
   });
-  await prisma.orderFile.create({ data: { orderId, originalFilename: filename, storagePath: relative, mimeType: "image/png", sizeBytes: output.length } });
+  await prisma.orderFile.create({ data: { orderId, originalFilename: filename, storagePath: relative, mimeType: "application/pdf", sizeBytes: output.length } });
   revalidatePath(`/orders/${orderId}`);
   redirect(`/orders/${orderId}/sheet?created=${encodeURIComponent(sheet.id)}`);
 }

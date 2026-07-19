@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { cutMarksSvg, mirrorArtworkForSheet } from "./production-sheet-render";
+import { composeThreeUpMugSheet, cutMarksSvg, mirrorArtworkForSheet } from "./production-sheet-render";
 
 describe("production sheet artwork rendering", () => {
   it("mirrors only the artwork bitmap and preserves its dimensions", async () => {
@@ -39,5 +39,13 @@ describe("production sheet artwork rendering", () => {
     const outline = cutMarksSvg({ mode: "FULL_OUTLINE", lengthMm: 8, offsetMm: 3, thicknessMm: 0.3 }, 2, 600)?.toString() ?? "";
     expect((outline.match(/<line /g) ?? []).length).toBe(8);
     expect(outline).toContain('stroke-width="7"');
+  });
+
+  it("renders a three-up 200×90 sheet at the exact A4 pixel dimensions", async () => {
+    const artwork = await sharp({ create: { width: 2362, height: 1063, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).png().toBuffer();
+    const sheet = await composeThreeUpMugSheet([artwork, artwork, artwork], ["PX000123-1", "PX000123-2", "PX000123-3"], { mode: "NONE" });
+    const metadata = await sharp(sheet).metadata();
+    expect(metadata.width).toBe(2480);
+    expect(metadata.height).toBe(3508);
   });
 });

@@ -10,9 +10,13 @@ import {
   INVENTORY_UNITS,
   recordInventoryWaste,
   removeOrArchiveInventoryItem,
+  restoreInventoryItem,
+  permanentlyDeleteArchivedInventoryItem,
   updateInventoryItem,
+  receiveStockContainers,
+  convertPooledStockToContainers,
 } from "@/lib/inventory/service";
-import { type InventoryUnit } from "@/lib/inventory/materials";
+import { CONSUMABLE_UNITS, consumableUnitLabel, type InventoryUnit } from "@/lib/inventory/materials";
 
 export type MaterialActionState = {
   ok: boolean;
@@ -24,7 +28,8 @@ export type MaterialActionState = {
     | "archived"
     | "stock-added"
     | "stock-adjusted"
-    | "waste-recorded";
+    | "waste-recorded"
+    | "restored";
 };
 
 const inventoryItemIdSchema = z.string().uuid();
@@ -64,6 +69,14 @@ function materialError(error: unknown): MaterialActionState {
       "The unit cannot be changed because this material is used by a production recipe.",
     MATERIAL_CONFIRMATION_MISMATCH:
       "Type the exact material name to confirm this action.",
+    INVALID_CONTAINER: "Check the container capacity, remaining amount and cost.",
+    INVALID_CONTAINER_COUNT: "Enter between 1 and 1000 containers.",
+    CONTAINER_CONFLICT: "This container changed while the operation was open. Try again.",
+    OPEN_CONTAINER_EXISTS: "Finish or use the current open container before adding another partially used one.",
+    CONTAINERS_ALREADY_EXIST: "This material already has physical containers configured.",
+    CONVERSION_WOULD_REDUCE_STOCK: "The container total is less than the current pooled balance. Use a larger capacity or more containers.",
+    INVENTORY_ITEM_ALREADY_ACTIVE: "This material is already active.",
+    MATERIAL_MUST_BE_ARCHIVED: "Only archived materials can be permanently deleted.",
   };
   return {
     ok: false,
@@ -77,10 +90,13 @@ export async function createInventoryItemAction(
   formData: FormData,
 ): Promise<MaterialActionState> {
   try {
+    const baseUnit = value(formData, "baseUnit") || "UNITS";
+    if (!validChoice(baseUnit, [...INVENTORY_UNITS, ...CONSUMABLE_UNITS]))
+      return { ok: false, message: "Choose a valid detailed unit." };
     await createInventoryItem({
       name: value(formData, "materialName"),
       inventoryType: "PRODUCTION_SUPPLY",
-      baseUnit: "PIECE",
+      baseUnit: baseUnit as InventoryUnit,
       openingQuantity: value(formData, "openingQuantity") || "0",
       minimumQuantity: value(formData, "minimumQuantity") || "0",
       unitCost: value(formData, "unitCost") || "0",
@@ -88,6 +104,8 @@ export async function createInventoryItemAction(
       supplier: value(formData, "materialSupplier"),
       storageLocation: value(formData, "materialStorageLocation"),
       notes: value(formData, "materialNotes"),
+      defaultContainerCapacity: value(formData, "defaultContainerCapacity") || undefined,
+      containerLabel: value(formData, "containerLabel") || undefined,
     });
     refreshInventory();
     return { ok: true, message: "Material created.", result: "created" };
@@ -106,7 +124,7 @@ export async function updateInventoryItemAction(
   const baseUnit = value(formData, "baseUnit");
   if (!id.success)
     return { ok: false, message: "This material could not be identified." };
-  if (!validChoice(baseUnit, INVENTORY_UNITS))
+  if (!validChoice(baseUnit, [...INVENTORY_UNITS, ...CONSUMABLE_UNITS]))
     return { ok: false, message: "Choose a valid detailed unit." };
 
   try {
@@ -120,6 +138,8 @@ export async function updateInventoryItemAction(
       supplier: value(formData, "materialEditSupplier"),
       storageLocation: value(formData, "materialEditStorageLocation"),
       notes: value(formData, "materialEditNotes"),
+      defaultContainerCapacity: value(formData, "defaultContainerCapacity") || undefined,
+      containerLabel: value(formData, "containerLabel") || undefined,
     });
     refreshInventory();
     return { ok: true, message: "Material updated.", result: "updated" };
@@ -154,6 +174,43 @@ export async function removeInventoryItemAction(
           ? "Unused material permanently deleted."
           : "Material archived. Its history has been preserved.",
     };
+  } catch (error) {
+    return materialError(error);
+  }
+}
+
+export async function restoreInventoryItemAction(
+  _previousState: MaterialActionState,
+  formData: FormData,
+): Promise<MaterialActionState> {
+  const id = inventoryItemIdSchema.safeParse(value(formData, "inventoryItemId"));
+  if (!id.success) return { ok: false, message: "This material could not be identified." };
+  try {
+    await requireAdmin();
+    const result = await restoreInventoryItem({ id: id.data });
+    refreshInventory();
+    revalidatePath("/production/recipes");
+    return { ok: true, result: "restored", message: `${result.name} restored.` };
+  } catch (error) {
+    return materialError(error);
+  }
+}
+
+export async function permanentlyDeleteArchivedInventoryItemAction(
+  _previousState: MaterialActionState,
+  formData: FormData,
+): Promise<MaterialActionState> {
+  const id = inventoryItemIdSchema.safeParse(value(formData, "inventoryItemId"));
+  if (!id.success) return { ok: false, message: "This material could not be identified." };
+  try {
+    await requireAdmin();
+    const result = await permanentlyDeleteArchivedInventoryItem({
+      id: id.data,
+      confirmed: formData.get("materialRemovalConfirmation") === "yes",
+    });
+    refreshInventory();
+    revalidatePath("/production/recipes");
+    return { ok: true, result: "deleted", message: `${result.name} permanently deleted.` };
   } catch (error) {
     return materialError(error);
   }
@@ -194,6 +251,58 @@ export async function addInventoryStockAction(
       ok: true,
       message: "Stock added successfully.",
       result: "stock-added",
+    };
+  } catch (error) {
+    return materialError(error);
+  }
+}
+
+export async function receiveStockContainersAction(
+  _previousState: MaterialActionState,
+  formData: FormData,
+): Promise<MaterialActionState> {
+  const id = inventoryItemIdSchema.safeParse(value(formData, "inventoryItemId"));
+  if (!id.success) return { ok: false, message: "This material could not be identified." };
+  const count = value(formData, "containerCount") || "1";
+  const capacity = value(formData, "containerCapacity");
+  const cost = value(formData, "containerPurchaseCost");
+  try {
+    await receiveStockContainers({
+      inventoryItemId: id.data,
+      containerCount: count,
+      capacity,
+      purchaseCost: cost,
+      receivedAt: value(formData, "containerReceivedAt") ? new Date(value(formData, "containerReceivedAt")) : undefined,
+      note: value(formData, "containerNote"),
+      supplierReference: value(formData, "containerSupplierReference"),
+      partiallyUsed: formData.get("containerPartiallyUsed") === "yes" ? { originalCapacity: value(formData, "containerOriginalCapacity"), remainingAmount: value(formData, "containerRemainingAmount") } : undefined,
+    });
+    refreshInventory();
+    return { ok: true, message: "Stock containers received.", result: "stock-added" };
+  } catch (error) {
+    return materialError(error);
+  }
+}
+
+export async function convertPooledStockToContainersAction(
+  _previousState: MaterialActionState,
+  formData: FormData,
+): Promise<MaterialActionState> {
+  const id = inventoryItemIdSchema.safeParse(value(formData, "inventoryItemId"));
+  if (!id.success) return { ok: false, message: "This material could not be identified." };
+  try {
+    await requireAdmin();
+    const result = await convertPooledStockToContainers({
+      inventoryItemId: id.data,
+      containerCount: value(formData, "containerCount"),
+      capacity: value(formData, "containerCapacity"),
+      purchaseCost: value(formData, "containerPurchaseCost"),
+    });
+    refreshInventory();
+    return {
+      ok: true,
+      result: "stock-added",
+      message: `${result.name}: ${result.containerCount} containers × ${result.capacity.toString()} ${consumableUnitLabel(result.unit)} converted to ${result.total.toString()} ${consumableUnitLabel(result.unit)} total stock.`,
     };
   } catch (error) {
     return materialError(error);

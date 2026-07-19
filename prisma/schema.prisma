@@ -121,10 +121,13 @@ model InventoryItem {
   supplier          String?
   storageLocation   String?
   notes             String?
+  defaultContainerCapacity Decimal?
+  containerLabel    String?
   isActive          Boolean  @default(true)
   productVariantId  String?  @unique
   productVariant    ProductVariant? @relation(fields: [productVariantId], references: [id], onDelete: SetNull)
   transactions      InventoryTransaction[]
+  containers        InventoryContainer[]
   recipeItems       ProductionRecipeItem[]
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -162,10 +165,43 @@ model InventoryTransaction {
   productionMaterialConsumption ProductionMaterialConsumption? @relation("ConsumptionTransaction", fields: [productionMaterialConsumptionId], references: [id], onDelete: Restrict)
   correctsTransaction InventoryTransaction? @relation("TransactionCorrection", fields: [correctsTransactionId], references: [id], onDelete: Restrict)
   corrections InventoryTransaction[] @relation("TransactionCorrection")
+  containerAllocations InventoryContainerAllocation[]
 
   @@index([inventoryItemId, createdAt])
   @@index([transactionType, createdAt])
   @@index([orderId])
+}
+
+model InventoryContainer {
+  id              String   @id @default(uuid())
+  inventoryItemId String
+  originalCapacity Decimal
+  remainingAmount Decimal
+  purchaseCost    Decimal
+  receivedAt      DateTime @default(now())
+  openedAt        DateTime?
+  depletedAt      DateTime?
+  status          String   @default("SEALED")
+  note            String?
+  supplierReference String?
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+  allocations     InventoryContainerAllocation[]
+  @@index([inventoryItemId, status, receivedAt])
+}
+
+model InventoryContainerAllocation {
+  id                    String   @id @default(uuid())
+  containerId           String
+  inventoryTransactionId String
+  amount                Decimal
+  unitCost              Decimal
+  totalCost             Decimal
+  allocationType        String   @default("CONSUMPTION")
+  createdAt             DateTime @default(now())
+  container             InventoryContainer @relation(fields: [containerId], references: [id], onDelete: Restrict)
+  inventoryTransaction  InventoryTransaction @relation(fields: [inventoryTransactionId], references: [id], onDelete: Cascade)
+  @@index([containerId, createdAt])
+  @@index([inventoryTransactionId])
 }
 
 model ProductionRecipe {

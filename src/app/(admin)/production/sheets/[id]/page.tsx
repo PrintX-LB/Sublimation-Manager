@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import path from "node:path";
 import { WorkflowHeader } from "@/components/admin/workflow-header";
 import { prisma } from "@/lib/db/prisma";
 import { orderItemReference } from "@/lib/orders/item-reference";
@@ -48,6 +49,8 @@ export default async function PrintSheetDetailPage({
   });
   if (!sheet) notFound();
   const available = await printSheetFileExists(sheet.storagePath);
+  const isPdf = path.extname(sheet.storagePath).toLowerCase() === ".pdf";
+  const fileUrl = `/api/local-files?path=${encodeURIComponent(sheet.storagePath)}`;
   const orders = Array.from(
     new Map(sheet.slots.map((slot) => [slot.orderId, slot.order])).values(),
   );
@@ -71,15 +74,15 @@ export default async function PrintSheetDetailPage({
         <section className="space-y-5">
           <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-4">
             <div className="flex min-h-[520px] items-center justify-center rounded-lg bg-slate-950 p-4">
-              <img
-                src={
-                  available
-                    ? `/api/local-files?path=${encodeURIComponent(sheet.storagePath)}`
-                    : "/branding/printx-sidebar-wordmark.png"
-                }
-                alt={available ? sheet.filename : "Print sheet file missing"}
-                className="max-h-[620px] max-w-full object-contain"
-              />
+              {available && isPdf ? (
+                <iframe src={fileUrl} title={`${sheet.filename} PDF preview`} className="h-[620px] w-full rounded border-0" />
+              ) : (
+                <img
+                  src={available ? fileUrl : "/branding/printx-sidebar-wordmark.png"}
+                  alt={available ? sheet.filename : "Print sheet file missing"}
+                  className="max-h-[620px] max-w-full object-contain"
+                />
+              )}
             </div>
             {!available ? (
               <p className="mt-3 text-sm text-rose-300">
@@ -200,13 +203,19 @@ export default async function PrintSheetDetailPage({
             <h2 className="font-semibold">Actions</h2>
             {available ? (
               <a
-                href={`/api/local-files?path=${encodeURIComponent(sheet.storagePath)}`}
+                href={fileUrl}
                 download
                 className="block w-full rounded bg-emerald-600 px-3 py-2 text-center text-sm font-semibold"
               >
                 Download
               </a>
             ) : null}
+            {available ? (
+              <a href={fileUrl} target="_blank" rel="noreferrer" className="block w-full rounded border border-emerald-500/50 px-3 py-2 text-center text-sm font-semibold text-emerald-200">
+                Print PDF
+              </a>
+            ) : null}
+            {isPdf ? <p className="text-xs text-slate-500">In the browser PDF viewer, choose Actual Size / 100% and disable Fit to page.</p> : null}
             {sheet.status !== "PRINTED" && sheet.status !== "CANCELLED" ? (
               <form action={markPrintSheetPrintedAction}>
                 <input type="hidden" name="sheetId" value={sheet.id} />

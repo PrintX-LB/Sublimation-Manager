@@ -25,6 +25,9 @@ interface ArtworkVersionData {
   printReadyPath: string;
   widthPx: number;
   heightPx: number;
+  templateWidthMm: number;
+  templateHeightMm: number;
+  templateDpi: number;
   createdAt: string;
   printSheetSlots: Array<{ id: string }>;
   project: {
@@ -69,6 +72,7 @@ export function SheetBuilderForm({
   // Selection state
   const [slot1, setSlot1] = useState<ArtworkVersionData | null>(null);
   const [slot2, setSlot2] = useState<ArtworkVersionData | null>(null);
+  const [slot3, setSlot3] = useState<ArtworkVersionData | null>(null);
   const [useSameTwice, setUseSameTwice] = useState(false);
 
   // Settings state
@@ -77,7 +81,7 @@ export function SheetBuilderForm({
   const [cutMarkLengthMm, setCutMarkLengthMm] = useState(8);
   const [cutMarkOffsetMm, setCutMarkOffsetMm] = useState(3);
   const [cutMarkThicknessMm, setCutMarkThicknessMm] = useState(0.3);
-  const [filename, setFilename] = useState("A4_print_sheet.png");
+  const [filename, setFilename] = useState("A4_print_sheet.pdf");
   const [generationRequestKey, setGenerationRequestKey] = useState(() =>
     crypto.randomUUID(),
   );
@@ -85,6 +89,16 @@ export function SheetBuilderForm({
   // Drag over states
   const [isDragOverSlot1, setIsDragOverSlot1] = useState(false);
   const [isDragOverSlot2, setIsDragOverSlot2] = useState(false);
+  const [isDragOverSlot3, setIsDragOverSlot3] = useState(false);
+
+  const isThreeUp = Boolean(
+    (slot1 && slot1.templateWidthMm === 200 && slot1.templateHeightMm === 90) ||
+      (!slot1 && initialVersions.some((version) => version.templateWidthMm === 200 && version.templateHeightMm === 90)),
+  );
+
+  React.useEffect(() => {
+    if (!isThreeUp && slot3) setSlot3(null);
+  }, [isThreeUp, slot3]);
 
   // Auto-generate filename when slots are selected
   React.useEffect(() => {
@@ -93,11 +107,14 @@ export function SheetBuilderForm({
       const secondNum = useSameTwice
         ? firstNum
         : (slot2 ? orderItemReference(slot2.project.orderItem.order.orderNumber, slot2.project.orderItem.itemSequence) : "empty");
-      setFilename(`A4_${firstNum}_${secondNum}.png`);
+      const thirdNum = slot3
+        ? orderItemReference(slot3.project.orderItem.order.orderNumber, slot3.project.orderItem.itemSequence)
+        : null;
+      setFilename(`A4_${firstNum}_${secondNum}${thirdNum ? `_${thirdNum}` : ""}.pdf`);
     } else {
-      setFilename("A4_print_sheet.png");
+      setFilename("A4_print_sheet.pdf");
     }
-  }, [slot1, slot2, useSameTwice]);
+  }, [slot1, slot2, slot3, useSameTwice]);
 
   // Filter versions based on search query and filter tabs
   const filteredVersions = useMemo(() => {
@@ -125,6 +142,7 @@ export function SheetBuilderForm({
 
   // Dynamic values
   const effectiveSlot2 = useSameTwice ? slot1 : slot2;
+  const effectiveSlot3 = isThreeUp ? slot3 : null;
   const isGenerateDisabled = !slot1 || (!effectiveSlot2 && !useSameTwice);
 
   // Estimated file size: A4 300DPI PNG has an estimated footprint in RAM or compressed disk space.
@@ -134,8 +152,9 @@ export function SheetBuilderForm({
     let base = 1.2;
     if (slot1) base += 0.8;
     if (effectiveSlot2) base += 0.8;
+    if (effectiveSlot3) base += 0.8;
     return `${base.toFixed(1)} MB`;
-  }, [slot1, effectiveSlot2]);
+  }, [slot1, effectiveSlot2, effectiveSlot3]);
 
   // HTML5 Drag and Drop handlers
   const handleDragStart = (e: React.DragEvent, version: ArtworkVersionData) => {
@@ -145,8 +164,8 @@ export function SheetBuilderForm({
     );
   };
 
-  const handleDragStartFromSlot = (e: React.DragEvent, slotIndex: 1 | 2) => {
-    const version = slotIndex === 1 ? slot1 : slot2;
+  const handleDragStartFromSlot = (e: React.DragEvent, slotIndex: 1 | 2 | 3) => {
+    const version = slotIndex === 1 ? slot1 : slotIndex === 2 ? slot2 : slot3;
     if (version) {
       e.dataTransfer.setData(
         "text/plain",
@@ -155,10 +174,11 @@ export function SheetBuilderForm({
     }
   };
 
-  const handleDrop = (e: React.DragEvent, slotIndex: 1 | 2) => {
+  const handleDrop = (e: React.DragEvent, slotIndex: 1 | 2 | 3) => {
     e.preventDefault();
     setIsDragOverSlot1(false);
     setIsDragOverSlot2(false);
+    setIsDragOverSlot3(false);
 
     try {
       const data = JSON.parse(e.dataTransfer.getData("text/plain"));
@@ -170,8 +190,10 @@ export function SheetBuilderForm({
       if (source === "list") {
         if (slotIndex === 1) {
           setSlot1(targetVersion);
-        } else {
+        } else if (slotIndex === 2) {
           setSlot2(targetVersion);
+        } else {
+          setSlot3(targetVersion);
         }
       } else if (source === "slot1" && slotIndex === 2) {
         // Dragged from slot 1 to slot 2
@@ -181,6 +203,12 @@ export function SheetBuilderForm({
         // Dragged from slot 2 to slot 1
         setSlot1(slot2);
         setSlot2(null);
+      } else if (source === "slot3" && slotIndex === 1) {
+        setSlot1(slot3);
+        setSlot3(null);
+      } else if (source === "slot3" && slotIndex === 2) {
+        setSlot2(slot3);
+        setSlot3(null);
       }
     } catch (err) {
       console.error("Drag and drop failed", err);
@@ -196,13 +224,14 @@ export function SheetBuilderForm({
   const handleReset = () => {
     setSlot1(null);
     setSlot2(null);
+    setSlot3(null);
     setUseSameTwice(false);
     setIncludeStrips(true);
     setCutMarkMode("CORNER_MARKS");
     setCutMarkLengthMm(8);
     setCutMarkOffsetMm(3);
     setCutMarkThicknessMm(0.3);
-    setFilename("A4_print_sheet.png");
+    setFilename("A4_print_sheet.pdf");
   };
 
   // Generation outcome state
@@ -224,25 +253,9 @@ export function SheetBuilderForm({
   const closeButtonRef = React.useRef<HTMLButtonElement>(null);
 
   // Trigger print logic
-  const handlePrint = (imagePath: string) => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Sheet</title>
-          <style>
-            @page { size: A4 portrait; margin: 0; }
-            body { margin: 0; display: flex; align-items: center; justify-content: center; }
-            img { width: 100vw; height: 100vh; object-fit: contain; }
-          </style>
-        </head>
-        <body onload="window.print();window.close();">
-          <img src="/api/local-files?path=${encodeURIComponent(imagePath)}" />
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+  const handlePrint = (filePath: string) => {
+    const printWindow = window.open(`/api/local-files?path=${encodeURIComponent(filePath)}`, "_blank");
+    if (printWindow) printWindow.focus();
   };
 
   // Keyboard trap and Escape listeners
@@ -277,6 +290,7 @@ export function SheetBuilderForm({
       const form = new FormData();
       form.set("slot1", slot1!.id);
       form.set("slot2", effectiveSlot2!.id);
+      if (effectiveSlot3) form.set("slot3", effectiveSlot3.id);
       form.set("includeStrips", includeStrips ? "on" : "off");
       form.set("includeContour", cutMarkMode === "NONE" ? "off" : "on");
       form.set("cutMarkMode", cutMarkMode);
@@ -493,6 +507,15 @@ export function SheetBuilderForm({
                       >
                         Slot 2
                       </button>
+                      {isThreeUp && (
+                        <button
+                          type="button"
+                          onClick={() => setSlot3(version)}
+                          className="flex-1 rounded bg-slate-800 py-1 text-[10px] font-semibold text-slate-300 transition hover:bg-slate-700"
+                        >
+                          Slot 3
+                        </button>
+                      )}
                       {isAssigned && (
                         <span className="flex items-center justify-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
                           Used
@@ -575,7 +598,7 @@ export function SheetBuilderForm({
                   ) : (
                     <div className="p-4 text-center">
                       <p className="text-xs font-semibold text-slate-500">
-                        Slot 1 (210 × 95mm)
+                        Slot 1 ({isThreeUp ? "200 × 90mm" : "210 × 95mm"})
                       </p>
                       <p className="mt-1 text-[10px] text-slate-400">
                         Drag artwork here
@@ -584,7 +607,7 @@ export function SheetBuilderForm({
                   )}
                 </div>
 
-                {/* PRODUCTION STRIP 1 */}
+                {!isThreeUp && <>{/* PRODUCTION STRIP 1 */}
                 <div
                   className={`flex h-[15%] flex-col justify-center rounded-lg border border-slate-300 bg-slate-50/80 p-2 font-mono text-[8px] leading-normal text-slate-700 transition ${!includeStrips ? "opacity-30" : ""}`}
                 >
@@ -608,6 +631,7 @@ export function SheetBuilderForm({
                     </p>
                   )}
                 </div>
+                </>}
 
                 {/* SLOT 2 CONTAINER */}
                 <div
@@ -671,7 +695,7 @@ export function SheetBuilderForm({
                   ) : (
                     <div className="p-4 text-center">
                       <p className="text-xs font-semibold text-slate-500">
-                        Slot 2 (210 × 95mm)
+                        Slot 2 ({isThreeUp ? "200 × 90mm" : "210 × 95mm"})
                       </p>
                       <p className="mt-1 text-[10px] text-slate-400">
                         Drag artwork here
@@ -680,7 +704,7 @@ export function SheetBuilderForm({
                   )}
                 </div>
 
-                {/* PRODUCTION STRIP 2 */}
+                {!isThreeUp && <>{/* PRODUCTION STRIP 2 */}
                 <div
                   className={`flex h-[15%] flex-col justify-center rounded-lg border border-slate-300 bg-slate-50/80 p-2 font-mono text-[8px] leading-normal text-slate-700 transition ${!includeStrips ? "opacity-30" : ""}`}
                 >
@@ -707,6 +731,57 @@ export function SheetBuilderForm({
                     </p>
                   )}
                 </div>
+                </>}
+
+                {/* SLOT 3 CONTAINER for 200 × 90 mm mug templates */}
+                {isThreeUp && (
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setIsDragOverSlot3(true);
+                    }}
+                    onDragLeave={() => setIsDragOverSlot3(false)}
+                    onDrop={(e) => handleDrop(e, 3)}
+                    draggable={!!slot3}
+                    onDragStart={(e) => handleDragStartFromSlot(e, 3)}
+                    className={`relative flex h-[31%] cursor-grab items-center justify-center rounded-lg border-2 border-dashed transition active:cursor-grabbing ${
+                      isDragOverSlot3
+                        ? "border-brand-500 bg-brand-500/10"
+                        : slot3
+                          ? "border-slate-300 bg-slate-50"
+                          : "border-slate-300 bg-slate-50/50 hover:border-slate-400"
+                    }`}
+                  >
+                    {slot3 ? (
+                      <div className="relative flex h-full w-full items-center justify-center p-2">
+                        <div className="relative h-full w-full">
+                          <Image
+                            src={`/api/local-files?path=${encodeURIComponent(slot3.printReadyPath || slot3.editedPath)}`}
+                            alt=""
+                            fill
+                            className="object-contain"
+                            style={{ transform: "scaleX(-1)" }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSlot3(null)}
+                          className="absolute right-2 top-2 rounded-lg p-1 text-red-600 transition hover:bg-red-50"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                        <div className="absolute bottom-2 left-2 rounded bg-slate-900/80 px-1.5 py-0.5 font-mono text-[9px] text-white">
+                          {orderItemReference(slot3.project.orderItem.order.orderNumber, slot3.project.orderItem.itemSequence)} (Slot 3)
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-4 text-center">
+                        <p className="text-xs font-semibold text-slate-500">Slot 3 (200 × 90mm)</p>
+                        <p className="mt-1 text-[10px] text-slate-400">Optional third transfer</p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -719,7 +794,7 @@ export function SheetBuilderForm({
               Sheet Settings
             </h2>
             <p className="text-xs text-slate-400">
-              Configure parameters before rendering the final PNG.
+              Configure parameters before rendering the final PDF.
             </p>
           </div>
 
@@ -789,7 +864,7 @@ export function SheetBuilderForm({
                   type="text"
                   value={filename}
                   onChange={(e) => setFilename(e.target.value)}
-                  placeholder="A4_print_sheet.png"
+                  placeholder="A4_print_sheet.pdf"
                   className="w-full rounded-xl border border-slate-800 bg-[#0f172a] px-3.5 py-2 text-sm text-slate-200 focus:border-brand-500 focus:outline-none"
                 />
               </div>
@@ -894,16 +969,11 @@ export function SheetBuilderForm({
                 </div>
               ) : (
                 <div className="relative aspect-[2480/3508] h-full w-full max-w-[390px]">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <iframe
                     src={`/api/local-files?path=${encodeURIComponent(outcome?.storagePath || createdStoragePath || "")}`}
-                    alt="A4 print sheet preview"
-                    className="h-full w-full object-contain"
+                    title="A4 print sheet PDF preview"
+                    className="h-full w-full rounded border-0"
                     onLoad={() => setPreviewLoading(false)}
-                    onError={() => {
-                      setPreviewLoading(false);
-                      setPreviewError(true);
-                    }}
                   />
                 </div>
               )}

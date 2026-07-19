@@ -8,13 +8,15 @@ import { orderItemReference } from "@/lib/orders/item-reference";
 import {
   A4_SHEET,
   SHEET_LAYOUT,
+  isThreeUpMugTemplate,
   nextSheetFilename,
   sheetLayout,
 } from "@/lib/production-sheet";
 import { getPrintSheetBuilderFolder, resolveStoredArtworkPath } from "@/lib/order-storage";
-import { cutMarksSvg, mirrorArtworkForSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-render";
+import { composeThreeUpMugSheet, cutMarksSvg, mirrorArtworkForSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-render";
 import { consumePhysicalPrintSheet } from "@/lib/production/recipes";
 import { nextPrintSheetNumber } from "@/lib/print-sheet-library";
+import { createExactSizePdf } from "@/lib/print-pdf";
 
 const escapeXml = (value: string) =>
   value.replace(
@@ -33,9 +35,11 @@ import { transitionOrder } from "@/lib/orders/service";
 export async function generateManualSheetAction(formData: FormData) {
   const firstId = String(formData.get("slot1") ?? "");
   const secondId = String(formData.get("slot2") ?? "");
+  const thirdId = String(formData.get("slot3") ?? "");
   const attemptIds = [
     String(formData.get("attempt1") ?? "").trim(),
     String(formData.get("attempt2") ?? "").trim(),
+    String(formData.get("attempt3") ?? "").trim(),
   ];
   const includeStrips = String(formData.get("includeStrips") ?? "on") === "on";
   const includeContour =
@@ -69,10 +73,11 @@ export async function generateManualSheetAction(formData: FormData) {
     };
   }
   const selected = await prisma.artworkVersion.findMany({
-    where: { id: { in: [firstId, ...(secondId ? [secondId] : [])] } },
+    where: { id: { in: [firstId, ...(secondId ? [secondId] : []), ...(thirdId ? [thirdId] : [])] } },
     include: {
       project: {
         include: {
+          template: true,
           orderItem: {
             include: {
               order: { include: { customer: true } },
@@ -87,10 +92,14 @@ export async function generateManualSheetAction(formData: FormData) {
   const second = secondId
     ? selected.find((version) => version.id === secondId)
     : undefined;
-  if (!first || (secondId && !second))
+  const third = thirdId
+    ? selected.find((version) => version.id === thirdId)
+    : undefined;
+  if (!first || (secondId && !second) || (thirdId && !third))
     throw new Error("ARTWORK_VERSION_NOT_FOUND");
-  const entries = second ? [first, second] : [first];
-  const template = entries[0]?.project.orderItem.productVariant?.product.printTemplate;
+  const entries = [first, ...(second ? [second] : []), ...(third ? [third] : [])];
+  if (entries.length > 3) throw new Error("TOO_MANY_ARTWORK_VERSIONS");
+  const template = entries[0]?.project.template ?? entries[0]?.project.orderItem.productVariant?.product.printTemplate;
   const cutMarks = normalizeCutMarkSettings({
     mode: (requestedCutMarkMode || (includeContour ? "FULL_OUTLINE" : "NONE")) as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE",
     lengthMm: Number.isFinite(cutMarkLengthMm) ? cutMarkLengthMm : Number(template?.cutMarkLengthMm ?? 8),
@@ -99,7 +108,7 @@ export async function generateManualSheetAction(formData: FormData) {
   });
   for (const version of entries) {
     const item = version.project.orderItem;
-    const versionTemplate = item.productVariant?.product.printTemplate;
+    const versionTemplate = version.project.template ?? item.productVariant?.product.printTemplate;
     if (item.order.status === "Cancelled")
       throw new Error("CANCELLED_ORDER_ARTWORK");
     const templateWidthPx = versionTemplate
@@ -145,7 +154,7 @@ export async function generateManualSheetAction(formData: FormData) {
       return mirrorArtworkForSheet(await sharp(resolved).png().toBuffer());
     }),
   );
-  if (!second)
+  if (!second && !third)
     buffers.push(
       await sharp({
         create: {
@@ -158,7 +167,7 @@ export async function generateManualSheetAction(formData: FormData) {
         .png()
         .toBuffer(),
     );
-  if (!second) artworkSizes.push({ width: SHEET_LAYOUT.designWidthPx, height: SHEET_LAYOUT.designHeightPx });
+  if (!second && !third) artworkSizes.push({ width: SHEET_LAYOUT.designWidthPx, height: SHEET_LAYOUT.designHeightPx });
   const printSheetsBase = await getPrintSheetBuilderFolder();
 
   // Choose save sub-folder structure
@@ -179,8 +188,26 @@ export async function generateManualSheetAction(formData: FormData) {
 
   await mkdir(baseFolder, { recursive: true });
   const existing = await readdir(baseFolder).catch(() => [] as string[]);
-  const defaultName = `A4_${first.project.orderItem.order.orderNumber}_${second?.project.orderItem.order.orderNumber ?? "single"}.png`;
+  const defaultName = `A4_${first.project.orderItem.order.orderNumber}_${second?.project.orderItem.order.orderNumber ?? "single"}.pdf`;
   const filename = nextSheetFilename(requested || defaultName, existing);
+  const threeUp = isThreeUpMugTemplate(Number(template?.widthMm ?? 0), Number(template?.heightMm ?? 0));
+  let previewPng: Buffer;
+  if (threeUp) {
+    const orderCopies = new Map<string, number>();
+    const identifiers = entries.map((version) => {
+      const orderNumber = version.project.orderItem.order.orderNumber;
+      const copyNumber = (orderCopies.get(orderNumber) ?? 0) + 1;
+      orderCopies.set(orderNumber, copyNumber);
+      return entries.filter((candidate) => candidate.project.orderItem.order.orderNumber === orderNumber).length > 1
+        ? `${orderNumber}-${copyNumber}`
+        : orderNumber;
+    });
+    previewPng = await composeThreeUpMugSheet(
+      buffers.slice(0, entries.length),
+      identifiers,
+      cutMarks,
+    );
+  } else {
   const layout = sheetLayout();
   const overlays: Array<{ input: Buffer; left: number; top: number }> = [
     { input: buffers[0]!, left: Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[0]!.width) / 2), top: layout.design1Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[0]!.height) / 2) },
@@ -206,7 +233,7 @@ export async function generateManualSheetAction(formData: FormData) {
   }
   const marks = cutMarksSvg(cutMarks, entries.length, A4_SHEET.dpi, [artworkSizes[0], artworkSizes[1]]);
   if (marks) overlays.push({ input: marks, left: 0, top: 0 });
-  const output = await sharp({
+  previewPng = await sharp({
     create: {
       width: SHEET_LAYOUT.widthPx,
       height: SHEET_LAYOUT.heightPx,
@@ -218,6 +245,8 @@ export async function generateManualSheetAction(formData: FormData) {
     .withMetadata({ density: A4_SHEET.dpi })
     .png()
     .toBuffer();
+  }
+  const output = await createExactSizePdf(previewPng, A4_SHEET);
   const absolute = path.join(baseFolder, filename);
   await writeFile(absolute, output, { flag: "wx" });
   const relative = path
@@ -238,25 +267,41 @@ export async function generateManualSheetAction(formData: FormData) {
       }
       const requestedAttempts = attemptIds.filter(Boolean);
       if (requestedAttempts.length) {
+        const requestedCopies = new Map<string, number>();
+        for (const attemptId of requestedAttempts) {
+          requestedCopies.set(attemptId, (requestedCopies.get(attemptId) ?? 0) + 1);
+        }
+        const validatedAttempts = new Set<string>();
         for (const [index, attemptId] of requestedAttempts.entries()) {
           const attempt = await tx.productionAttempt.findUnique({
             where: { id: attemptId },
             include: {
               failedIncident: true,
               replacementIncident: true,
-              printSheetSlots: true,
+              orderItem: {
+                include: {
+                  printSheetSlots: {
+                    include: {
+                      sheet: true,
+                    },
+                  },
+                },
+              },
             },
           });
-          if (
-            !attempt ||
-            attempt.status !== "Ready to Print" ||
-            attempt.failedIncident ||
-            attempt.replacementIncident ||
-            attempt.printSheetSlots.some(
-              (slot) => slot.assignmentState === "ACTIVE",
-            )
-          )
+          if (!attempt || attempt.status !== "Ready to Print" || attempt.failedIncident || attempt.replacementIncident)
             throw new Error("STALE_QUEUE_ATTEMPT");
+          if (!validatedAttempts.has(attempt.id)) {
+            validatedAttempts.add(attempt.id);
+            const activeCopies = attempt.orderItem.printSheetSlots.filter(
+              (slot) =>
+                slot.assignmentState === "ACTIVE" &&
+                !["CANCELLED", "SUPERSEDED"].includes(slot.sheet.status),
+            ).length;
+            if (activeCopies + (requestedCopies.get(attempt.id) ?? 0) > Math.max(1, attempt.orderItem.quantity)) {
+              throw new Error("STALE_QUEUE_ATTEMPT");
+            }
+          }
           if (attempt.orderItemId !== entries[index]?.project.orderItem.id)
             throw new Error("ATTEMPT_ARTWORK_MISMATCH");
         }
@@ -277,13 +322,17 @@ export async function generateManualSheetAction(formData: FormData) {
           cutMarkThicknessMm: cutMarks.thicknessMm,
           regenerationRequestKey: physicalRequestKey,
           slots: {
-            create: entries.map((version, index) => ({
-              slotNumber: index + 1,
-              artworkVersionId: version.id,
-              orderId: version.project.orderItem.orderId,
-              orderItemId: version.project.orderItem.id,
-              productionAttemptId: attemptIds[index] || undefined,
-            })),
+            create: entries.map((version, index) => {
+              const attemptId = attemptIds[index];
+              const isDuplicate = attemptId && attemptIds.slice(0, index).includes(attemptId);
+              return {
+                slotNumber: index + 1,
+                artworkVersionId: version.id,
+                orderId: version.project.orderItem.orderId,
+                orderItemId: version.project.orderItem.id,
+                productionAttemptId: (attemptId && !isDuplicate) ? attemptId : undefined,
+              };
+            }),
           },
         },
       });

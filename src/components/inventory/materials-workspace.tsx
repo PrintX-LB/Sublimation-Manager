@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useActionState,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -17,20 +18,28 @@ import {
   MoreHorizontal,
   PackagePlus,
   Plus,
+  RotateCcw,
   Trash2,
   X,
 } from "lucide-react";
 import {
   addInventoryStockAction,
+  receiveStockContainersAction,
+  convertPooledStockToContainersAction,
   adjustInventoryAction,
   createInventoryItemAction,
   recordInventoryWasteAction,
   removeInventoryItemAction,
+  restoreInventoryItemAction,
+  permanentlyDeleteArchivedInventoryItemAction,
   updateInventoryItemAction,
   type MaterialActionState,
 } from "@/app/(admin)/inventory/items/actions";
 import {
-  inventoryQuantityLabel,
+  consumableUnitLabel,
+  formatInventoryQuantity,
+  canonicalConsumableUnit,
+  containerLabelFor,
   type InventoryUnit,
 } from "@/lib/inventory/materials";
 import { formatUSD } from "@/lib/money";
@@ -51,6 +60,16 @@ export type MaterialWorkspaceItem = {
   recipeReferenceCount: number;
   hasHistory: boolean;
   canChangeUnit: boolean;
+  defaultContainerCapacity: string | null;
+  containerLabel: string | null;
+  containers: Array<{
+    id: string;
+    originalCapacity: string;
+    remainingAmount: string;
+    purchaseCost: string;
+    receivedAt: string;
+    status: "SEALED" | "OPEN" | "DEPLETED";
+  }>;
 };
 
 type MaterialFilter = "active" | "inactive" | "all";
@@ -182,7 +201,21 @@ function CreateMaterialModal({
               className={inputClass}
             />
           </Field>
-          <Field label="Minimum stock">
+          <Field label="Base unit">
+            <select name="baseUnit" defaultValue="UNITS" className={inputClass}>
+              <option value="UNITS">Units</option>
+              <option value="SHEETS">Sheets</option>
+              <option value="ML">ml</option>
+              <option value="M">m</option>
+            </select>
+          </Field>
+          <Field label="Default container capacity">
+            <input name="defaultContainerCapacity" type="number" min="0" step="0.001" placeholder="Example: 100" className={inputClass} />
+          </Field>
+          <Field label="Container label (optional)">
+            <input name="containerLabel" placeholder="Bottle, Roll…" {...textInputProps} className={inputClass} />
+          </Field>
+          <Field label="Minimum stock (selected unit)">
             <input
               name="minimumQuantity"
               type="number"
@@ -293,7 +326,15 @@ function EditMaterialModal({
     >
       <form action={action} autoComplete="off" className="space-y-4 p-5">
         <input type="hidden" name="inventoryItemId" value={item.id} />
-        <input type="hidden" name="baseUnit" value={item.baseUnit} />
+        <Field label="Base unit">
+          <select name="baseUnit" defaultValue={canonicalConsumableUnit(item.baseUnit)} disabled={!item.canChangeUnit} className={inputClass}>
+            <option value="UNITS">Units</option>
+            <option value="SHEETS">Sheets</option>
+            <option value="ML">ml</option>
+            <option value="M">m</option>
+          </select>
+        </Field>
+        {!item.canChangeUnit ? <input type="hidden" name="baseUnit" value={item.baseUnit} /> : null}
         <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
           <p className="text-xs text-slate-400">Current quantity</p>
           <p className="mt-1 font-semibold text-slate-100">
@@ -314,7 +355,7 @@ function EditMaterialModal({
               className={inputClass}
             />
           </Field>
-          <Field label="Minimum stock">
+          <Field label={`Minimum stock (${consumableUnitLabel(item.baseUnit)})`}>
             <input
               name="minimumQuantity"
               type="number"
@@ -323,6 +364,12 @@ function EditMaterialModal({
               defaultValue={item.minimumQuantity}
               className={inputClass}
             />
+          </Field>
+          <Field label="Default container capacity">
+            <input name="defaultContainerCapacity" type="number" min="0" step="0.001" defaultValue={item.defaultContainerCapacity ?? ""} className={inputClass} />
+          </Field>
+          <Field label="Container label (optional)">
+            <input name="containerLabel" defaultValue={item.containerLabel ?? ""} {...textInputProps} className={inputClass} />
           </Field>
           <Field label="Unit cost">
             <input
@@ -405,20 +452,22 @@ function RemoveMaterialModal({
   item,
   close,
   completed,
+  permanentDelete = false,
 }: {
   item: MaterialWorkspaceItem;
   close: () => void;
   completed: (message: string) => void;
+  permanentDelete?: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState(
-    removeInventoryItemAction,
+    permanentDelete ? permanentlyDeleteArchivedInventoryItemAction : removeInventoryItemAction,
     initialMaterialActionState,
   );
   useEffect(() => {
     if (state.ok) completed(state.message);
   }, [completed, state]);
-  const archive = item.hasHistory;
+  const archive = item.isActive && item.hasHistory;
   return (
     <ModalFrame
       title={archive ? "Archive Material" : "Delete Material"}
@@ -445,7 +494,9 @@ function RemoveMaterialModal({
           <p className="text-red-200/90">
             {archive
               ? "This material will be archived. Stock, recipes and transaction history will remain available."
-              : "This unused material will be permanently deleted and cannot be recovered."}
+              : permanentDelete
+                ? "This archived material and its inventory history, recipe references and containers will be permanently deleted. This cannot be recovered."
+                : "This unused material will be permanently deleted and cannot be recovered."}
           </p>
         </div>
         <p className="text-sm font-semibold text-red-200">Are you sure you want to continue?</p>
@@ -489,12 +540,36 @@ function RemoveMaterialModal({
 }
 
 function quantityLabel(value: number | string, unit: InventoryUnit) {
-  void unit;
-  const number = typeof value === "number" ? value : Number(value);
-  const formatted = Number.isFinite(number)
-    ? number.toLocaleString("en-US", { maximumFractionDigits: 3 })
-    : "—";
-  return `${formatted} ${inventoryQuantityLabel(number)}`;
+  return formatInventoryQuantity(value, unit);
+}
+
+function RestoreMaterialButton({
+  item,
+  completed,
+}: {
+  item: MaterialWorkspaceItem;
+  completed: (message: string) => void;
+}) {
+  const [state, action, pending] = useActionState(
+    restoreInventoryItemAction,
+    initialMaterialActionState,
+  );
+  useEffect(() => {
+    if (state.ok) completed(state.message);
+  }, [completed, state]);
+  return (
+    <form action={action}>
+      <input type="hidden" name="inventoryItemId" value={item.id} />
+      <button
+        type="submit"
+        disabled={pending}
+        className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-xs font-semibold text-emerald-300 hover:bg-emerald-950/40 disabled:opacity-50"
+      >
+        <RotateCcw size={14} /> {pending ? "Restoring…" : "Activate material"}
+      </button>
+      {state.message && !state.ok ? <span className="block px-3 py-1 text-xs text-red-300">{state.message}</span> : null}
+    </form>
+  );
 }
 
 function OperationSummary({
@@ -743,6 +818,97 @@ function AdjustStockModal({
   );
 }
 
+function ReceiveStockModal({
+  item,
+  close,
+  completed,
+}: {
+  item: MaterialWorkspaceItem;
+  close: () => void;
+  completed: (message: string) => void;
+}) {
+  const [state, action, pending] = useActionState(receiveStockContainersAction, initialMaterialActionState);
+  const [partial, setPartial] = useState(false);
+  useEffect(() => { if (state.ok) completed(state.message); }, [completed, state]);
+  const unit = item.baseUnit;
+  const containerName = containerLabelFor(unit, item.containerLabel);
+  return (
+    <ModalFrame title={`Receive Stock — ${item.name}`} description="Add each physical bottle, roll or pack as its own container." close={close} blocked={pending}>
+      <form action={action} autoComplete="off" className="space-y-4 p-5">
+        <input type="hidden" name="inventoryItemId" value={item.id} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={`Number of ${containerName.toLowerCase()}s`}><input autoFocus required name="containerCount" type="number" min="1" step="1" defaultValue="1" className={inputClass} /></Field>
+          <Field label={`Capacity per ${containerName.toLowerCase()} (${consumableUnitLabel(unit)})`}><input required name="containerCapacity" type="number" min="0" step="0.001" defaultValue={item.defaultContainerCapacity ?? ""} className={inputClass} /></Field>
+          <Field label={`Cost per ${containerName.toLowerCase()}`}><input required name="containerPurchaseCost" type="number" min="0" step="0.01" defaultValue={item.unitCost} className={inputClass} /></Field>
+          <Field label="Received date"><input name="containerReceivedAt" type="date" defaultValue={new Date().toISOString().slice(0, 10)} className={inputClass} /></Field>
+          <Field label="Supplier or reference"><input name="containerSupplierReference" defaultValue={item.supplier ?? ""} {...textInputProps} className={inputClass} /></Field>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" name="containerPartiallyUsed" value="yes" checked={partial} onChange={(event) => setPartial(event.target.checked)} /> Add an already partially used container</label>
+        {partial ? <div className="grid gap-3 sm:grid-cols-2"><Field label={`Original capacity (${consumableUnitLabel(unit)})`}><input required name="containerOriginalCapacity" type="number" min="0" step="0.001" className={inputClass} /></Field><Field label={`Remaining amount (${consumableUnitLabel(unit)})`}><input required name="containerRemainingAmount" type="number" min="0" step="0.001" className={inputClass} /></Field></div> : null}
+        <Field label="Optional note"><textarea name="containerNote" {...textInputProps} rows={2} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-500" /></Field>
+        <ActionError state={state} />
+        <div className="flex justify-end gap-2 border-t border-slate-800 pt-4"><button type="button" onClick={close} disabled={pending} className="h-10 rounded-lg border border-slate-700 px-4 text-sm font-semibold text-slate-200">Cancel</button><button type="submit" disabled={pending} className="h-10 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white disabled:opacity-50">{pending ? "Receiving…" : "Receive Stock"}</button></div>
+      </form>
+    </ModalFrame>
+  );
+}
+
+function ConvertPooledStockModal({
+  item,
+  close,
+  completed,
+}: {
+  item: MaterialWorkspaceItem;
+  close: () => void;
+  completed: (message: string) => void;
+}) {
+  const [state, action, pending] = useActionState(convertPooledStockToContainersAction, initialMaterialActionState);
+  const unit = canonicalConsumableUnit(item.baseUnit);
+  const containerName = containerLabelFor(unit, item.containerLabel);
+  const [count, setCount] = useState(String(Math.max(1, Math.floor(Number(item.currentQuantity) || 1))));
+  const [capacity, setCapacity] = useState(item.defaultContainerCapacity ?? "");
+  const parsedCount = Number(count);
+  const parsedCapacity = Number(capacity);
+  const total = Number.isInteger(parsedCount) && parsedCount > 0 && Number.isFinite(parsedCapacity) ? parsedCount * parsedCapacity : 0;
+  useEffect(() => { if (state.ok) completed(state.message); }, [completed, state]);
+  return (
+    <ModalFrame
+      title={`Set up containers — ${item.name}`}
+      description="Convert the existing pooled balance into physical containers. This does not represent a new purchase."
+      close={close}
+      blocked={pending}
+    >
+      <form action={action} autoComplete="off" className="space-y-4 p-5">
+        <input type="hidden" name="inventoryItemId" value={item.id} />
+        <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-4 text-sm text-amber-100">
+          Current pooled balance: <strong>{formatInventoryQuantity(item.currentQuantity, unit)}</strong>. Set the number of physical containers and their capacity so PrintX can track each container separately.
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label={`Number of ${containerName.toLowerCase()}s`}>
+            <input required name="containerCount" type="number" min="1" step="1" value={count} onChange={(event) => setCount(event.target.value)} className={inputClass} />
+          </Field>
+          <Field label={`Capacity per ${containerName.toLowerCase()} (${consumableUnitLabel(unit)})`}>
+            <input required name="containerCapacity" type="number" min="0.001" step="0.001" value={capacity} onChange={(event) => setCapacity(event.target.value)} className={inputClass} />
+          </Field>
+          <Field label={`Cost per ${containerName.toLowerCase()}`}>
+            <input required name="containerPurchaseCost" type="number" min="0" step="0.01" defaultValue={item.unitCost} className={inputClass} />
+          </Field>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-950/50 p-4 text-sm">
+          <p className="text-xs text-slate-500">After conversion</p>
+          <p className="mt-1 font-semibold text-slate-100">{Number.isFinite(total) && total > 0 ? `${parsedCount} × ${formatInventoryQuantity(parsedCapacity, unit)} = ${formatInventoryQuantity(total, unit)}` : "Enter a valid count and capacity."}</p>
+          {total > 0 && total < Number(item.currentQuantity) ? <p className="mt-2 text-red-300">The configured total cannot be below the current balance.</p> : null}
+        </div>
+        <ActionError state={state} />
+        <div className="flex justify-end gap-2 border-t border-slate-800 pt-4">
+          <button type="button" onClick={close} disabled={pending} className="h-10 rounded-lg border border-slate-700 px-4 text-sm font-semibold text-slate-200">Cancel</button>
+          <button type="submit" disabled={pending || !Number.isInteger(parsedCount) || parsedCount < 1 || !Number.isFinite(parsedCapacity) || parsedCapacity <= 0 || total < Number(item.currentQuantity)} className="h-10 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white disabled:opacity-50">{pending ? "Converting…" : "Set up containers"}</button>
+        </div>
+      </form>
+    </ModalFrame>
+  );
+}
+
 function RecordWasteModal({
   item,
   close,
@@ -857,18 +1023,18 @@ export function MaterialsWorkspace({
     null,
   );
   const [stockOperation, setStockOperation] = useState<{
-    type: "add" | "adjust" | "waste";
+    type: "add" | "receive" | "convert" | "adjust" | "waste";
     item: MaterialWorkspaceItem;
   } | null>(null);
   const [notice, setNotice] = useState("");
-  const completed = (message: string) => {
+  const completed = useCallback((message: string) => {
     setCreateOpen(false);
     setEditItem(null);
     setRemoveItem(null);
     setStockOperation(null);
     setNotice(message);
     router.refresh();
-  };
+  }, [router]);
   const materialCards = useMemo(
     () =>
       items.map((item) => {
@@ -908,22 +1074,41 @@ export function MaterialsWorkspace({
               </div>
               <div>
                 <p className="text-xs text-slate-500">Minimum</p>
-                <p className="text-slate-100">{item.minimumQuantity}</p>
+                <p className="text-slate-100">
+                  {quantityLabel(item.minimumQuantity, item.baseUnit)}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Unit cost</p>
                 <p className="text-slate-100">{formatUSD(item.unitCost)}</p>
               </div>
             </div>
+            {item.containers.length > 0 ? (
+              <details className="mt-3 rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+                <summary className="cursor-pointer text-xs font-semibold text-slate-300">{item.containers.filter((container) => container.status !== "DEPLETED").length} active {containerLabelFor(item.baseUnit, item.containerLabel)} · {item.containers.filter((container) => container.status === "SEALED").length} sealed</summary>
+                <div className="mt-2 space-y-1.5 text-xs text-slate-400">
+                  {item.containers.map((container, index) => <div key={container.id} className="flex items-center justify-between gap-2"><span>{containerLabelFor(item.baseUnit, item.containerLabel)} {index + 1} · {container.status}</span><span>{formatInventoryQuantity(container.remainingAmount, item.baseUnit)} / {formatInventoryQuantity(container.originalCapacity, item.baseUnit)}</span></div>)}
+                </div>
+              </details>
+            ) : item.defaultContainerCapacity ? <p className="mt-3 text-xs text-slate-500">No containers received yet. Capacity: {formatInventoryQuantity(item.defaultContainerCapacity, item.baseUnit)}.</p> : null}
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-800 pt-3">
               {item.isActive ? (
                 <>
+                  {item.containers.length === 0 && item.defaultContainerCapacity ? (
+                    <button
+                      type="button"
+                      onClick={() => setStockOperation({ type: "convert", item })}
+                      className="h-8 rounded-lg border border-amber-500/40 px-3 text-xs font-semibold text-amber-200 hover:bg-amber-950/30"
+                    >
+                      Set up containers
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={() => setStockOperation({ type: "add", item })}
+                    onClick={() => setStockOperation({ type: item.defaultContainerCapacity || item.containers.length ? "receive" : "add", item })}
                     className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-500"
                   >
-                    Add Stock
+                    {item.defaultContainerCapacity || item.containers.length ? "Receive Stock" : "Add Stock"}
                   </button>
                   <button
                     type="button"
@@ -954,18 +1139,17 @@ export function MaterialsWorkspace({
                 </summary>
                 <div className="absolute right-0 z-20 mt-1 min-w-52 rounded-lg border border-slate-700 bg-slate-900 p-1.5 shadow-xl">
                   {adminUnlocked ? (
-                    <button
-                      type="button"
-                      onClick={() => setRemoveItem(item)}
-                      className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-xs font-semibold text-red-300 hover:bg-red-950/40"
-                    >
-                      {item.hasHistory ? (
-                        <Archive size={14} />
-                      ) : (
-                        <Trash2 size={14} />
-                      )}
-                      {item.hasHistory ? "Archive material" : "Delete material"}
-                    </button>
+                    <>
+                      {!item.isActive ? <RestoreMaterialButton item={item} completed={completed} /> : null}
+                      <button
+                        type="button"
+                        onClick={() => setRemoveItem(item)}
+                        className="flex h-9 w-full items-center gap-2 rounded-md px-3 text-left text-xs font-semibold text-red-300 hover:bg-red-950/40"
+                      >
+                        {item.isActive && item.hasHistory ? <Archive size={14} /> : <Trash2 size={14} />}
+                        {item.isActive && item.hasHistory ? "Archive material" : "Delete material"}
+                      </button>
+                    </>
                   ) : (
                     <Link
                       href="/settings"
@@ -981,7 +1165,7 @@ export function MaterialsWorkspace({
           </article>
         );
       }),
-    [adminUnlocked, items],
+    [adminUnlocked, items, completed],
   );
   return (
     <div className="space-y-4">
@@ -1056,6 +1240,7 @@ export function MaterialsWorkspace({
         <RemoveMaterialModal
           key={removeItem.id}
           item={removeItem}
+          permanentDelete={!removeItem.isActive}
           close={() => setRemoveItem(null)}
           completed={completed}
         />
@@ -1067,6 +1252,12 @@ export function MaterialsWorkspace({
           close={() => setStockOperation(null)}
           completed={completed}
         />
+      ) : null}
+      {stockOperation?.type === "receive" ? (
+        <ReceiveStockModal key={`receive-${stockOperation.item.id}`} item={stockOperation.item} close={() => setStockOperation(null)} completed={completed} />
+      ) : null}
+      {stockOperation?.type === "convert" ? (
+        <ConvertPooledStockModal key={`convert-${stockOperation.item.id}`} item={stockOperation.item} close={() => setStockOperation(null)} completed={completed} />
       ) : null}
       {stockOperation?.type === "adjust" ? (
         <AdjustStockModal

@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { A4_SHEET, SHEET_LAYOUT, sheetLayout } from "@/lib/production-sheet";
+import { A4_SHEET, SHEET_LAYOUT, sheetLayout, threeUpMugLayout } from "@/lib/production-sheet";
 
 export type CutMarkMode = "NONE" | "CORNER_MARKS" | "FULL_OUTLINE";
 
@@ -11,6 +11,8 @@ export interface CutMarkSettings {
 }
 
 export type ArtworkSize = { width: number; height: number };
+
+const escapeXml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
 
 const safeNumber = (value: number, fallback: number) =>
   Number.isFinite(value) && value >= 0 ? value : fallback;
@@ -67,6 +69,68 @@ export function cutMarksSvg(
 
 export function mmToPixels(mm: number, dpi: number) {
   return Math.round((mm / 25.4) * dpi);
+}
+
+/** Render unobtrusive order-only labels for the 200×90 mm three-up layout. */
+function threeUpIdentifiersSvg(labels: string[], dpi: number) {
+  const layout = threeUpMugLayout(dpi);
+  const fontSize = Math.round((8 / 72) * dpi);
+  const inset = mmToPixels(2.5, dpi);
+  const text = labels.map((label, index) => {
+    const top = layout.topMarginPx + index * layout.stridePx;
+    const bottom = top + layout.heightPx;
+    const estimatedWidth = label.length * fontSize * 0.58;
+    const safeLabel = escapeXml(label);
+    // There is no inter-transfer gap in the 3-up layout. Keep normal short
+    // identifiers at the lower edge, with a white keyline so they remain
+    // readable over artwork. Longer identifiers use the physical left safety
+    // margin vertically, never covering the printable transfer area.
+    if (estimatedWidth <= layout.widthPx * 0.55) {
+      const x = layout.leftPx + inset;
+      const y = bottom + Math.round(layout.labelHeightPx * 0.72);
+      return `<text x="${x}" y="${y}" font-family="Arial, sans-serif" font-size="${fontSize}" fill="black">${safeLabel}</text>`;
+    }
+    const x = layout.leftPx - inset;
+    const y = top + Math.round(layout.heightPx / 2);
+    return `<text x="${x}" y="${y}" transform="rotate(-90 ${x} ${y})" text-anchor="middle" font-family="Arial, sans-serif" font-size="${fontSize}" fill="black">${safeLabel}</text>`;
+  }).join("");
+  return Buffer.from(`<svg width="${SHEET_LAYOUT.widthPx}" height="${SHEET_LAYOUT.heightPx}" xmlns="http://www.w3.org/2000/svg"><g>${text}</g></svg>`);
+}
+
+function threeUpCutMarksSvg(settingsInput: Partial<CutMarkSettings> | null | undefined, occupiedSlots: number, dpi: number) {
+  const settings = normalizeCutMarkSettings(settingsInput);
+  if (settings.mode === "NONE") return null;
+  const layout = threeUpMugLayout(dpi);
+  const length = Math.min(mmToPixels(settings.lengthMm, dpi), layout.widthPx / 2);
+  const offset = mmToPixels(settings.offsetMm, dpi);
+  const stroke = mmToPixels(settings.thicknessMm, dpi);
+  const marks: string[] = [];
+  for (let index = 0; index < Math.min(occupiedSlots, layout.maxSlots); index += 1) {
+    const left = layout.leftPx + offset;
+    const right = layout.leftPx + layout.widthPx - offset;
+    const slotTop = layout.topMarginPx + index * layout.stridePx;
+    const top = slotTop + offset;
+    const bottom = slotTop + layout.heightPx - offset;
+    if (settings.mode === "FULL_OUTLINE") marks.push(line(left, top, right, top), line(right, top, right, bottom), line(right, bottom, left, bottom), line(left, bottom, left, top));
+    else marks.push(line(left, top, left + length, top), line(left, top, left, top + length), line(right, top, right - length, top), line(right, top, right, top + length), line(left, bottom, left + length, bottom), line(left, bottom, left, bottom - length), line(right, bottom, right - length, bottom), line(right, bottom, right, bottom - length));
+  }
+  return Buffer.from(`<svg width="${SHEET_LAYOUT.widthPx}" height="${SHEET_LAYOUT.heightPx}" xmlns="http://www.w3.org/2000/svg"><g fill="none" stroke="black" stroke-width="${stroke}" stroke-linecap="square">${marks.join("")}</g></svg>`);
+}
+
+export async function composeThreeUpMugSheet(artwork: Buffer[], identifiers: string[], cutMarks?: Partial<CutMarkSettings> | null) {
+  const layout = threeUpMugLayout(A4_SHEET.dpi);
+  const composites: Array<{ input: Buffer; left: number; top: number }> = [];
+  for (const [index, input] of artwork.slice(0, layout.maxSlots).entries()) {
+    const metadata = await sharp(input).metadata();
+    const width = metadata.width ?? layout.widthPx;
+    const height = metadata.height ?? layout.heightPx;
+    composites.push({ input, left: layout.leftPx + Math.round((layout.widthPx - width) / 2), top: layout.topMarginPx + index * layout.stridePx + Math.round((layout.heightPx - height) / 2) });
+  }
+  const labels = threeUpIdentifiersSvg(identifiers.slice(0, layout.maxSlots), A4_SHEET.dpi);
+  composites.push({ input: labels, left: 0, top: 0 });
+  const marks = threeUpCutMarksSvg(cutMarks, artwork.length, A4_SHEET.dpi);
+  if (marks) composites.push({ input: marks, left: 0, top: 0 });
+  return sharp({ create: { width: SHEET_LAYOUT.widthPx, height: SHEET_LAYOUT.heightPx, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).withMetadata({ density: A4_SHEET.dpi }).png().toBuffer();
 }
 
 /**

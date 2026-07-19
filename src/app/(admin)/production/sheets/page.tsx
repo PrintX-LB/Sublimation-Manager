@@ -206,6 +206,16 @@ async function GeneratedSheetHistory({ params }: { params: WorkspaceParams }) {
                   >
                     Open
                   </Link>
+                  {available ? (
+                    <a
+                      href={`/api/local-files?path=${encodeURIComponent(sheet.storagePath)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="ml-2 rounded border border-emerald-500/40 px-3 py-1.5 text-xs text-emerald-200"
+                    >
+                      Print
+                    </a>
+                  ) : null}
                   <DeleteSheetButton
                     sheetId={sheet.id}
                     sheetLabel={sheet.sheetNumber ?? sheet.filename}

@@ -71,6 +71,9 @@ export async function ManualSheetBuilderContent({
     printReadyPath: v.printReadyPath,
     widthPx: v.widthPx,
     heightPx: v.heightPx,
+    templateWidthMm: Number((v.project.template ?? v.project.orderItem.productVariant?.product.printTemplate)?.widthMm ?? 0),
+    templateHeightMm: Number((v.project.template ?? v.project.orderItem.productVariant?.product.printTemplate)?.heightMm ?? 0),
+    templateDpi: Number((v.project.template ?? v.project.orderItem.productVariant?.product.printTemplate)?.dpi ?? 300),
     createdAt: v.createdAt.toISOString(),
     printSheetSlots: v.printSheetSlots.map((s) => ({ id: s.id })),
     project: {

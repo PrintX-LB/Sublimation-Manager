@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db/prisma";
-import { changeInventoryQuantity } from "@/lib/inventory/service";
+import { changeInventoryQuantity, consumeFromContainers } from "@/lib/inventory/service";
+import { canonicalConsumableUnit } from "@/lib/inventory/materials";
 
 export const RECIPE_ROLES = [
   "BLANK_PRODUCT",
@@ -67,7 +68,6 @@ export async function addRecipeItem(input: {
   const quantity = decimal(input.quantity);
   if (!quantity.isFinite() || quantity.isZero() || quantity.isNegative())
     throw new Error("INVALID_RECIPE_QUANTITY");
-  if (!quantity.mod(1).isZero()) throw new Error("WHOLE_UNIT_REQUIRED");
   if (
     !RECIPE_ROLES.includes(input.materialRole) ||
     !CONSUMPTION_STAGES.includes(input.consumptionStage)
@@ -80,6 +80,8 @@ export async function addRecipeItem(input: {
     });
     if (!inventory) throw new Error("INVENTORY_ITEM_NOT_FOUND");
     if (!inventory.isActive) throw new Error("INVENTORY_ITEM_INACTIVE");
+    const normalizedUnit = canonicalConsumableUnit(inventory.baseUnit);
+    if (["UNITS", "SHEETS"].includes(normalizedUnit) && !quantity.mod(1).isZero()) throw new Error("WHOLE_UNIT_REQUIRED");
     return tx.productionRecipeItem.create({
       data: {
         recipeId: input.recipeId,
@@ -108,7 +110,6 @@ export async function updateRecipeItem(input: {
   const quantity = decimal(input.quantity);
   if (!quantity.isFinite() || quantity.isZero() || quantity.isNegative())
     throw new Error("INVALID_RECIPE_QUANTITY");
-  if (!quantity.mod(1).isZero()) throw new Error("WHOLE_UNIT_REQUIRED");
   if (
     !RECIPE_ROLES.includes(input.materialRole) ||
     !CONSUMPTION_STAGES.includes(input.consumptionStage)
@@ -125,6 +126,8 @@ export async function updateRecipeItem(input: {
     });
     if (!inventory || !inventory.isActive)
       throw new Error("INVENTORY_ITEM_INACTIVE");
+    const normalizedUnit = canonicalConsumableUnit(inventory.baseUnit);
+    if (["UNITS", "SHEETS"].includes(normalizedUnit) && !quantity.mod(1).isZero()) throw new Error("WHOLE_UNIT_REQUIRED");
     const duplicate = await tx.productionRecipeItem.findFirst({
       where: {
         recipeId: existing.recipeId,
@@ -232,16 +235,29 @@ export function correctMaterialConsumption(input: {
 export function recipeCost(
   items: Array<{
     quantity: Prisma.Decimal;
-    inventoryItem: { unitCost: Prisma.Decimal };
+    inventoryItem: { unitCost: Prisma.Decimal; defaultContainerCapacity?: Prisma.Decimal | null };
   }>,
 ) {
   return items.reduce(
     (sum, item) =>
       sum.add(
-        new Prisma.Decimal(item.quantity).mul(item.inventoryItem.unitCost),
+        new Prisma.Decimal(item.quantity).mul(effectiveUnitCost(item.inventoryItem)),
       ),
     new Prisma.Decimal(0),
   );
+}
+
+function effectiveUnitCost(item: {
+  unitCost: Prisma.Decimal;
+  defaultContainerCapacity?: Prisma.Decimal | null;
+}) {
+  const unitCost = new Prisma.Decimal(item.unitCost);
+  const capacity = item.defaultContainerCapacity
+    ? new Prisma.Decimal(item.defaultContainerCapacity)
+    : null;
+  return capacity && capacity.isFinite() && capacity.greaterThan(0)
+    ? unitCost.div(capacity)
+    : unitCost;
 }
 
 export async function consumeRecipeStage(
@@ -270,7 +286,7 @@ export async function consumeRecipeStage(
     where: { productVariantId: input.productVariantId, active: true },
     include: {
       items: {
-        include: { inventoryItem: true },
+        include: { inventoryItem: { include: { containers: { where: { status: { not: "DEPLETED" }, }, orderBy: { receivedAt: "asc" } } } } },
         where: { consumptionStage: input.stage },
       },
     },
@@ -332,31 +348,46 @@ export async function consumeRecipeStage(
         consumptionStage: input.stage,
         quantity,
         unit: line.unit,
-        unitCost: line.inventoryItem.unitCost,
+        unitCost: effectiveUnitCost(line.inventoryItem),
         materialNameSnapshot: line.inventoryItem.name,
         materialRoleSnapshot: line.materialRole,
         idempotencyKey,
       },
     });
-    const transaction = await changeInventoryQuantity(tx, {
-      inventoryItemId: line.inventoryItemId,
-      delta: quantity.neg(),
-      transactionType: input.incidentId
-        ? "PRODUCTION_INCIDENT"
-        : "ORDER_CONSUMPTION",
-      reason: `Recipe consumption: ${recipe.name}`,
-      unit: line.unit,
-      unitCost: line.inventoryItem.unitCost,
-      totalCost: quantity.mul(line.inventoryItem.unitCost),
-      orderId: input.orderId,
-      orderItemId: input.orderItemId,
-      productionIncidentId: input.incidentId,
-      productionAttemptId: input.productionAttemptId,
-      productionMaterialConsumptionId: consumption.id,
-      idempotencyKey: `${idempotencyKey}:inventory`,
-    });
+    const transactionResult = line.inventoryItem.inventoryType === "PRODUCTION_SUPPLY" && line.inventoryItem.containers.length
+      ? await consumeFromContainers(tx, {
+          inventoryItemId: line.inventoryItemId,
+          quantity,
+          transactionType: input.incidentId ? "PRODUCTION_INCIDENT" : "ORDER_CONSUMPTION",
+          reason: `Recipe consumption: ${recipe.name}`,
+          orderId: input.orderId,
+          orderItemId: input.orderItemId,
+          productionIncidentId: input.incidentId,
+          productionAttemptId: input.productionAttemptId,
+          productionMaterialConsumptionId: consumption.id,
+          idempotencyKey: `${idempotencyKey}:inventory`,
+        })
+      : { transaction: await changeInventoryQuantity(tx, {
+          inventoryItemId: line.inventoryItemId,
+          delta: quantity.neg(),
+          transactionType: input.incidentId ? "PRODUCTION_INCIDENT" : "ORDER_CONSUMPTION",
+          reason: `Recipe consumption: ${recipe.name}`,
+          unit: line.unit,
+          unitCost: effectiveUnitCost(line.inventoryItem),
+          totalCost: quantity.mul(effectiveUnitCost(line.inventoryItem)),
+          orderId: input.orderId,
+          orderItemId: input.orderItemId,
+          productionIncidentId: input.incidentId,
+          productionAttemptId: input.productionAttemptId,
+          productionMaterialConsumptionId: consumption.id,
+          idempotencyKey: `${idempotencyKey}:inventory`,
+        }), totalCost: quantity.mul(effectiveUnitCost(line.inventoryItem)) };
+    if (line.inventoryItem.containers.length && transactionResult.totalCost) {
+      await tx.productionMaterialConsumption.update({ where: { id: consumption.id }, data: { unitCost: transactionResult.totalCost.div(quantity) } });
+    }
+    const transaction = transactionResult.transaction;
     consumed.push({ consumption, transaction });
-    const lineCost = quantity.mul(line.inventoryItem.unitCost);
+    const lineCost = transactionResult.totalCost ?? quantity.mul(effectiveUnitCost(line.inventoryItem));
     totalCost = totalCost.add(lineCost);
     orderCost = orderCost.add(
       lineCost.mul(
@@ -417,16 +448,48 @@ export async function consumePhysicalPrintSheet(
 
   // Non-paper materials remain slot-specific. PRINT_MEDIA is always excluded
   // here so it cannot be multiplied by the number of artwork slots.
-  for (const [index, entry] of configured.entries()) {
-    if (!entry.recipe) continue;
+  // Group slots to combine duplicate productionAttemptId consumptions (e.g. for quantity > 1)
+  // to avoid violating the unique constraint on [recipeItemId, productionAttemptId, consumptionStage].
+  const groupedSlots: Array<{
+    productVariantId: string;
+    orderId: string;
+    orderItemId?: string;
+    productionAttemptId?: string;
+    count: number;
+    indices: number[];
+  }> = [];
+
+  for (const [index, slot] of input.slots.entries()) {
+    const existing = slot.productionAttemptId
+      ? groupedSlots.find((g) => g.productionAttemptId === slot.productionAttemptId)
+      : null;
+    if (existing) {
+      existing.count += 1;
+      existing.indices.push(index);
+    } else {
+      groupedSlots.push({
+        productVariantId: slot.productVariantId,
+        orderId: slot.orderId,
+        orderItemId: slot.orderItemId,
+        productionAttemptId: slot.productionAttemptId,
+        count: 1,
+        indices: [index],
+      });
+    }
+  }
+
+  for (const group of groupedSlots) {
+    const entry = configured[group.indices[0]!];
+    if (!entry || !entry.recipe) continue;
     await consumeRecipeStage(tx, {
-      productVariantId: entry.slot.productVariantId,
+      productVariantId: group.productVariantId,
       stage: "PRINT_SHEET_GENERATION",
-      multiplier: "1",
-      orderId: entry.slot.orderId,
-      orderItemId: entry.slot.orderItemId,
+      multiplier: group.count.toString(),
+      orderId: group.orderId,
+      orderItemId: group.orderItemId,
+      productionAttemptId: group.productionAttemptId,
       printSheetId: input.printSheetId,
-      idempotencyPrefix: `sheet:${input.printSheetId}:slot:${index + 1}`,
+      idempotencyPrefix: `sheet:${input.printSheetId}:slot-group:${group.indices[0]! + 1}`,
       excludeRoles: ["PRINT_MEDIA"],
     });
   }
@@ -502,9 +565,8 @@ export async function consumePhysicalPrintSheet(
       where: { idempotencyKey: allocationKey },
     });
     if (!existing) {
-      const halfCost = new Prisma.Decimal(
-        selected.line.inventoryItem.unitCost,
-      ).div(2);
+      const physicalSheetCost = paperResult.totalCost ?? effectiveUnitCost(selected.line.inventoryItem);
+      const halfCost = new Prisma.Decimal(physicalSheetCost).div(2);
       await tx.productionMaterialConsumption.create({
         data: {
           recipeItemId: selected.line.id,
@@ -514,7 +576,7 @@ export async function consumePhysicalPrintSheet(
           consumptionStage: "PRINT_SHEET_GENERATION",
           quantity: new Prisma.Decimal(1),
           unit: "SHEET",
-          unitCost: selected.line.inventoryItem.unitCost,
+          unitCost: physicalSheetCost,
           materialNameSnapshot: selected.line.inventoryItem.name,
           materialRoleSnapshot: "PRINT_MEDIA",
           idempotencyKey: allocationKey,

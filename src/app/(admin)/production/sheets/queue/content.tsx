@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
 import { SHEET_LAYOUT, mmToPixels } from "@/lib/production-sheet";
 import {
-  suggestPairs,
+  suggestGroups,
   templateCompatibilityKey,
   type PairingAttempt,
 } from "@/lib/production/sheet-pairing";
@@ -41,9 +41,9 @@ export async function AutomaticPairingContent({
       orderItem: { order: { status: { not: "Cancelled" } } },
     },
     include: {
-      printSheetSlots: { include: { sheet: true } },
       orderItem: {
         include: {
+          printSheetSlots: { include: { sheet: true } },
           order: { select: { id: true, orderNumber: true, status: true, dueDate: true, priority: true, customer: { select: { fullName: true } } } },
           productVariant: { select: { name: true, product: { select: { printTemplate: { select: { name: true, widthMm: true, heightMm: true, dpi: true, cutMarkMode: true } } } } } },
           artworkProject: {
@@ -61,14 +61,13 @@ export async function AutomaticPairingContent({
   const eligible: PairingAttempt[] = [];
   const blocked: Array<{ id: string; orderNumber: string; itemSequence: number; reason: string }> = [];
   for (const attempt of attempts) {
-    if (
-      attempt.printSheetSlots.some(
-        (slot) =>
-          slot.assignmentState === "ACTIVE" &&
-          !["CANCELLED", "SUPERSEDED"].includes(slot.sheet.status),
-      )
-    )
-      continue;
+    const activeSlotCount = attempt.orderItem.printSheetSlots.filter(
+      (slot) =>
+        slot.assignmentState === "ACTIVE" &&
+        !["CANCELLED", "SUPERSEDED"].includes(slot.sheet.status),
+    ).length;
+    const itemQuantity = Math.max(1, attempt.orderItem.quantity);
+    if (activeSlotCount >= itemQuantity) continue;
     const version = artworkVersionFor(attempt.orderItem);
     const template =
       attempt.orderItem.artworkProject?.template ??
@@ -96,8 +95,7 @@ export async function AutomaticPairingContent({
           contourEnabled?: boolean;
         })
       : {};
-    eligible.push({
-      id: attempt.id,
+    const baseCandidate = {
       attemptNumber: attempt.attemptNumber,
       status: attempt.status,
       createdAt: attempt.createdAt,
@@ -122,15 +120,24 @@ export async function AutomaticPairingContent({
         cutMarkMode: settings.contourEnabled ? template.cutMarkMode : "NONE",
       }),
       assigned: false,
-    });
+    };
+    const remainingCount = itemQuantity - activeSlotCount;
+    if (remainingCount > 0) {
+      eligible.push({
+        ...baseCandidate,
+        id: attempt.id,
+        sourceAttemptId: attempt.id,
+        remainingCount,
+      });
+    }
   }
-  const { pairs, unpaired } = suggestPairs(eligible);
-  const fullSheets = pairs.length;
+  const { groups, unpaired } = suggestGroups(eligible, (item) => item.compatibilityKey.includes("_2362X1063_") ? 3 : 2);
+  const fullSheets = groups.length;
   const totalSheets = fullSheets + unpaired.length;
   const urgentCount = eligible.filter((item) => item.priority === "Urgent").length;
   const overdueCount = eligible.filter((item) => item.dueDate && item.dueDate < new Date()).length;
   const generationBatches = [
-    ...pairs.map(([first, second]) => ({ attempt1: first.id, attempt2: second.id })),
+    ...groups.map((group) => ({ attempt1: group[0]!.id, attempt2: group[1]?.id, attempt3: group[2]?.id })),
     ...unpaired.map((item) => ({ attempt1: item.id })),
   ];
   const card = (item: PairingAttempt) => (
@@ -141,7 +148,7 @@ export async function AutomaticPairingContent({
             href={`/orders/${item.orderId}`}
             className="text-brand-200 font-semibold hover:underline"
           >
-            {orderItemReference(item.orderNumber, item.itemSequence ?? 1)}
+            {orderItemReference(item.orderNumber, item.itemSequence ?? 1)}{item.remainingCount && item.remainingCount > 1 ? ` (x${item.remainingCount})` : ""}
           </Link>
           <p className="text-sm text-slate-300">{item.customerName}</p>
         </div>
@@ -232,14 +239,14 @@ export async function AutomaticPairingContent({
           )}
         </section>
         <section className="space-y-3">
-          <h2 className="font-semibold">Suggested pairs</h2>
-          {pairs.length ? (
-            pairs.map(([first, second]) => (
-              <PairDraftEditor key={`${first.id}-${second.id}`} first={first} second={second} candidates={eligible} generateAction={generateQueueSheetAction} />
+          <h2 className="font-semibold">Suggested sheets</h2>
+          {groups.length ? (
+            groups.map((group) => (
+              <PairDraftEditor key={group.map((item) => item.id).join("-")} slots={group} maxSlots={group[0]!.compatibilityKey.includes("_2362X1063_") ? 3 : 2} candidates={eligible} generateAction={generateQueueSheetAction} />
             ))
           ) : (
             <p className="rounded border border-slate-700 p-6 text-sm text-slate-500">
-              No full pairs available.
+              No full sheets available.
             </p>
           )}
         </section>

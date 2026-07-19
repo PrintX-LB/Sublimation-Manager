@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { A4_SHEET, MUG_DESIGN, SHEET_LAYOUT, mmToPixels, nextSheetFilename, sheetLayout } from "./production-sheet";
+import { A4_SHEET, MUG_DESIGN, SHEET_LAYOUT, mmToPixels, nextSheetFilename, sheetLayout, threeUpMugLayout, isThreeUpMugTemplate } from "./production-sheet";
 
 describe("A4 production sheets", () => {
   it("calculates exact A4 and mug dimensions at 300 DPI", () => {
@@ -13,7 +13,17 @@ describe("A4 production sheets", () => {
     const layout = sheetLayout();
     expect(layout.strip2Y + SHEET_LAYOUT.stripHeightPx).toBe(SHEET_LAYOUT.heightPx);
   });
+  it("centers three 200×90 mm transfers with equal A4 margins", () => {
+    const layout = threeUpMugLayout();
+    expect(isThreeUpMugTemplate(200, 90)).toBe(true);
+    expect(layout.widthPx).toBe(mmToPixels(200));
+    expect(layout.heightPx).toBe(mmToPixels(90));
+    expect(layout.leftPx).toBe(mmToPixels(5));
+    expect(layout.labelHeightPx).toBe(mmToPixels(4));
+    expect(layout.topMarginPx).toBe(mmToPixels(7.5));
+    expect(Math.abs(layout.topMarginPx * 2 + layout.stridePx * 3 - SHEET_LAYOUT.heightPx)).toBeLessThanOrEqual(1);
+  });
   it("versions filename collisions", () => {
-    expect(nextSheetFilename("A4_PX00001_mugs_1-2.png", ["A4_PX00001_mugs_1-2.png"])).toBe("A4_PX00001_mugs_1-2-v2.png");
+    expect(nextSheetFilename("A4_PX00001_mugs_1-2.png", ["A4_PX00001_mugs_1-2.pdf"])).toBe("A4_PX00001_mugs_1-2-v2.pdf");
   });
 });

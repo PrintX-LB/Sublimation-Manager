@@ -6,7 +6,7 @@ import {
   OTHER_MATERIAL_WASTE_OPTIONS,
   PRODUCTION_INCIDENT_REASONS,
 } from "@/lib/orders/production-incident-options";
-import { inventoryQuantityLabel } from "@/lib/inventory/materials";
+import { formatInventoryQuantity } from "@/lib/inventory/materials";
 
 type ActionResult = { error?: string; success?: string };
 type WasteOption = {
@@ -227,12 +227,10 @@ export function ProductionIncidentButton({
                           }))
                         }
                       />
-                      {option.name} — {option.quantity}{" "}
-                      {inventoryQuantityLabel(option.quantity)}
+                      {option.name} — {formatInventoryQuantity(option.quantity, option.unit)}
                     </span>
                     <span className="text-slate-500">
-                      Available: {option.currentQuantity}{" "}
-                      {inventoryQuantityLabel(option.currentQuantity)}
+                      Available: {formatInventoryQuantity(option.currentQuantity, option.unit)}
                     </span>
                   </label>
                 ))}

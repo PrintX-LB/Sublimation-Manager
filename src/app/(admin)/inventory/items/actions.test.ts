@@ -23,8 +23,11 @@ vi.mock("@/lib/inventory/service", () => ({
     "GRAM",
     "KILOGRAM",
   ],
+  CONSUMABLE_UNITS: ["UNITS", "SHEETS", "ML", "M"],
   createInventoryItem: mocks.createInventoryItem,
   removeOrArchiveInventoryItem: mocks.removeOrArchiveInventoryItem,
+  restoreInventoryItem: vi.fn(),
+  permanentlyDeleteArchivedInventoryItem: vi.fn(),
   updateInventoryItem: vi.fn(),
   addInventoryStock: mocks.addInventoryStock,
   adjustInventory: mocks.adjustInventory,
@@ -53,7 +56,7 @@ describe("material inventory actions", () => {
     );
     expect(result.ok).toBe(true);
     expect(mocks.createInventoryItem).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "A4 Paper", baseUnit: "PIECE" }),
+      expect.objectContaining({ name: "A4 Paper", baseUnit: "UNITS" }),
     );
   });
 

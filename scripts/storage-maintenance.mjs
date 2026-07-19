@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, statSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
 
@@ -65,7 +66,7 @@ else if (command === "clean-build") {
   }
 } else if (command === "clean") {
   for (const task of ["clean-build", "clean-test", "clean-release"]) {
-    const result = process.spawnSync(process.execPath, [process.argv[1], task], { stdio: "inherit" });
+    const result = spawnSync(process.execPath, [process.argv[1], task], { stdio: "inherit" });
     if (result.status !== 0) process.exit(result.status ?? 1);
   }
 } else {

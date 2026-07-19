@@ -14,6 +14,7 @@ import {
   toggleRecipeAction,
   updateRecipeItemAction,
 } from "./actions";
+import { consumableUnitLabel, formatInventoryQuantity } from "@/lib/inventory/materials";
 
 export const dynamic = "force-dynamic";
 
@@ -124,10 +125,10 @@ export default async function ProductionRecipesPage({
                     }`}
                   >
                     {validPaper
-                      ? `Physical sheet paper: ${paperLines[0]!.inventoryItem.name} · 1 unit per generated physical sheet`
+                      ? `Physical sheet paper: ${paperLines[0]!.inventoryItem.name} · ${formatInventoryQuantity(1, paperLines[0]!.inventoryItem.baseUnit)} per generated physical sheet`
                       : paperLines.length > 1
                         ? "Physical sheet paper setup is ambiguous. Keep one PRINT_MEDIA line at PRINT_SHEET_GENERATION."
-                        : "Physical sheet paper is not configured. Add one PRINT_MEDIA item with quantity 1 unit at PRINT_SHEET_GENERATION."}
+                        : "Physical sheet paper is not configured. Add one PRINT_MEDIA sheet at PRINT_SHEET_GENERATION."}
                   </p>
                 </div>
                 <div className="flex gap-1">
@@ -183,7 +184,7 @@ export default async function ProductionRecipesPage({
                             >
                               {inventory.map((item) => (
                                 <option key={item.id} value={item.id}>
-                                  {item.name}
+                                  {item.name} · {consumableUnitLabel(item.baseUnit)}
                                 </option>
                               ))}
                             </select>
@@ -191,11 +192,11 @@ export default async function ProductionRecipesPage({
                               name="quantity"
                               defaultValue={line.quantity.toString()}
                               type="number"
-                              min="1"
-                              step="1"
+                              min="0.001"
+                              step="0.001"
                               className="h-8 rounded border border-slate-700 bg-slate-950 px-2 text-xs"
                             />
-                            <input type="hidden" name="unit" value="PIECE" />
+                            <input type="hidden" name="unit" value={line.inventoryItem.baseUnit} />
                             <select
                               name="materialRole"
                               defaultValue={line.materialRole}
@@ -256,7 +257,7 @@ export default async function ProductionRecipesPage({
                       <option value="">Material</option>
                       {inventory.map((item) => (
                         <option key={item.id} value={item.id}>
-                          {item.name}
+                          {item.name} · {consumableUnitLabel(item.baseUnit)}
                         </option>
                       ))}
                     </select>
@@ -264,12 +265,12 @@ export default async function ProductionRecipesPage({
                       name="quantity"
                       required
                       type="number"
-                      min="1"
-                      step="1"
-                      placeholder="Qty / unit"
+                      min="0.001"
+                      step="0.001"
+                      placeholder="Qty / unit (e.g. 0.10 ml)"
                       className="h-9 rounded border border-slate-700 bg-slate-950 px-2 text-xs"
                     />
-                    <input type="hidden" name="unit" value="PIECE" />
+                    <input type="hidden" name="unit" value="UNITS" />
                     <select
                       name="materialRole"
                       required

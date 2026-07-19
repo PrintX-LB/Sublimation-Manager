@@ -11,4 +11,17 @@ describe("production recipe calculations", () => {
     ]);
     expect(result.toString()).toBe("0.749");
   });
+
+  it("converts container cost to cost per measured unit", () => {
+    const result = recipeCost([
+      {
+        quantity: new Prisma.Decimal("0.1"),
+        inventoryItem: {
+          unitCost: new Prisma.Decimal("6"),
+          defaultContainerCapacity: new Prisma.Decimal("100"),
+        },
+      },
+    ]);
+    expect(result.toString()).toBe("0.006");
+  });
 });
