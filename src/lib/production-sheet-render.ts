@@ -20,7 +20,7 @@ const safeNumber = (value: number, fallback: number) =>
 export function normalizeCutMarkSettings(input?: Partial<CutMarkSettings> | null): CutMarkSettings {
   const mode = input?.mode === "NONE" || input?.mode === "CORNER_MARKS" || input?.mode === "FULL_OUTLINE"
     ? input.mode
-    : "FULL_OUTLINE";
+    : "CORNER_MARKS";
   return {
     mode,
     lengthMm: safeNumber(input?.lengthMm ?? 8, 8) || 8,

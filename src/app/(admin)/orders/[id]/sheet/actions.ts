@@ -39,7 +39,7 @@ export async function createA4PrintSheetAction(formData: FormData) {
   if (!first || !second) throw new Error("SELECT_TWO_ARTWORK_VERSIONS");
   const template = first.item.productVariant?.product.printTemplate;
   const cutMarks = normalizeCutMarkSettings({
-    mode: (requestedCutMarkMode || (includeContour ? "FULL_OUTLINE" : "NONE")) as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE",
+    mode: (requestedCutMarkMode || (includeContour ? "CORNER_MARKS" : "NONE")) as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE",
     lengthMm: Number(template?.cutMarkLengthMm ?? 8),
     offsetMm: Number(template?.cutMarkOffsetMm ?? 3),
     thicknessMm: Number(template?.cutMarkThicknessMm ?? 0.3),

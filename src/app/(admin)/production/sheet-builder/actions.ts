@@ -101,7 +101,7 @@ export async function generateManualSheetAction(formData: FormData) {
   if (entries.length > 3) throw new Error("TOO_MANY_ARTWORK_VERSIONS");
   const template = entries[0]?.project.template ?? entries[0]?.project.orderItem.productVariant?.product.printTemplate;
   const cutMarks = normalizeCutMarkSettings({
-    mode: (requestedCutMarkMode || (includeContour ? "FULL_OUTLINE" : "NONE")) as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE",
+    mode: (requestedCutMarkMode || (includeContour ? "CORNER_MARKS" : "NONE")) as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE",
     lengthMm: Number.isFinite(cutMarkLengthMm) ? cutMarkLengthMm : Number(template?.cutMarkLengthMm ?? 8),
     offsetMm: Number.isFinite(cutMarkOffsetMm) ? cutMarkOffsetMm : Number(template?.cutMarkOffsetMm ?? 3),
     thicknessMm: Number.isFinite(cutMarkThicknessMm) ? cutMarkThicknessMm : Number(template?.cutMarkThicknessMm ?? 0.3),
