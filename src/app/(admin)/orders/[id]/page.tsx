@@ -71,10 +71,13 @@ function fileUrl(value: string) {
 
 export default async function OrderDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ transitionError?: string }>;
 }) {
   const { id } = await params;
+  const query = searchParams ? await searchParams : {};
   if (!orderIdSchema.safeParse(id).success) notFound();
   const order = await getOrder(id);
   if (!order) notFound();
@@ -144,6 +147,11 @@ export default async function OrderDetailPage({
   return (
     <div className="mx-auto max-w-7xl space-y-5">
       <BackNavigation label="Back to Orders" fallbackRoute="/orders" />
+      {query.transitionError === "insufficient_stock" ? (
+        <div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+          This order cannot move to Ready to Print because there is not enough blank-product stock. Add stock in Inventory, then try again.
+        </div>
+      ) : null}
       <header className="flex flex-wrap items-start justify-between gap-3">
         <PageHeading
           title={order.orderNumber}

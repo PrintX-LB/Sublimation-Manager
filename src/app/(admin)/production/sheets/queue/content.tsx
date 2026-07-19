@@ -109,7 +109,7 @@ export async function AutomaticPairingContent({
       dueDate: attempt.orderItem.order.dueDate,
       priority: attempt.orderItem.order.priority,
       artworkVersionId: version.id,
-      artworkPath: version.printReadyPath || version.editedPath,
+              artworkPath: version.editedPath,
       templateName: template.name,
       compatibilityKey: templateCompatibilityKey({
         name: template.name,

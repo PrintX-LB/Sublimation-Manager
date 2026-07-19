@@ -266,8 +266,11 @@ export async function transitionOrderAction(formData: FormData) {
   try {
     await transitionOrder(id, status);
   } catch (error) {
-    if (error instanceof Error && error.message === "INSUFFICIENT_STOCK")
-      throw new Error("Insufficient stock to approve this order.");
+    if (error instanceof Error && error.message === "INSUFFICIENT_STOCK") {
+      // This is an expected operational validation failure. Do not let it
+      // become Next.js' generic server exception screen in the desktop app.
+      redirect(`/orders/${id}?transitionError=insufficient_stock`);
+    }
     throw error;
   }
   revalidatePath("/orders");
@@ -424,6 +427,8 @@ export async function uploadArtworkLayerAction(formData: FormData) {
 export async function saveArtworkExportAction(formData: FormData) {
   const itemId = String(formData.get("orderItemId") ?? "");
   const dataUrl = String(formData.get("dataUrl") ?? "");
+  const baseDataUrl = String(formData.get("baseDataUrl") ?? dataUrl);
+  const withContour = String(formData.get("withContour") ?? "off") === "on";
   const widthPx = Number(formData.get("widthPx"));
   const heightPx = Number(formData.get("heightPx"));
   const zoom = Number(formData.get("zoom"));
@@ -438,6 +443,7 @@ export async function saveArtworkExportAction(formData: FormData) {
   if (
     !item ||
     !/^data:image\/png;base64,/.test(dataUrl) ||
+    !/^data:image\/png;base64,/.test(baseDataUrl) ||
     !Number.isInteger(widthPx) ||
     widthPx < 1 ||
     !Number.isInteger(heightPx) ||
@@ -446,10 +452,14 @@ export async function saveArtworkExportAction(formData: FormData) {
     !templateDpi || !Number.isInteger(templateDpi) || templateDpi < 1
   )
     throw new Error("ARTWORK_EXPORT_INVALID");
-  if (dataUrl.length > 50 * 1024 * 1024) throw new Error("ARTWORK_EXPORT_TOO_LARGE");
-  const folder = await getOrderArtworkDirectory(item.order.orderNumber, "print-ready", item.order.customer.fullName);
+  if (dataUrl.length > 50 * 1024 * 1024 || baseDataUrl.length > 50 * 1024 * 1024) throw new Error("ARTWORK_EXPORT_TOO_LARGE");
+  const editedFolder = await getOrderArtworkDirectory(item.order.orderNumber, "edited", item.order.customer.fullName);
+  const printReadyFolder = withContour
+    ? await getOrderArtworkDirectory(item.order.orderNumber, "print-ready", item.order.customer.fullName)
+    : null;
   try {
-    await mkdir(folder, { recursive: true });
+    await mkdir(editedFolder, { recursive: true });
+    if (printReadyFolder) await mkdir(printReadyFolder, { recursive: true });
   } catch (error) {
     console.error("Artwork export directory creation failed", error);
     throw new Error("Unable to create the print-ready artwork folder. Check upload folder permissions.");
@@ -462,21 +472,27 @@ export async function saveArtworkExportAction(formData: FormData) {
   });
   const version = sequence.value;
   const filename = `version-${version}-${Date.now()}.png`;
+  const editedPath = path.join(editedFolder, filename);
+  const printReadyPath = printReadyFolder ? path.join(printReadyFolder, filename) : null;
   try {
     const pngBuffer = Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64");
-    const metadata = await sharp(pngBuffer).metadata();
+    const basePngBuffer = Buffer.from(baseDataUrl.slice("data:image/png;base64,".length), "base64");
+    const metadata = await sharp(basePngBuffer).metadata();
     if (metadata.width !== widthPx || metadata.height !== heightPx) throw new Error("Export dimensions do not match the print template.");
-    const taggedPng = await sharp(pngBuffer).withMetadata({ density: templateDpi }).png().toBuffer();
+    const taggedBasePng = await sharp(basePngBuffer).withMetadata({ density: templateDpi }).png().toBuffer();
     await writeFile(
-      path.join(folder, filename),
-      taggedPng,
+      editedPath,
+      taggedBasePng,
       { flag: "wx" },
     );
+    if (printReadyPath) {
+      const taggedPrintReadyPng = await sharp(pngBuffer).withMetadata({ density: templateDpi }).png().toBuffer();
+      await writeFile(printReadyPath, taggedPrintReadyPng, { flag: "wx" });
+    }
   } catch (error) {
     console.error("Artwork export file write failed", error);
     throw new Error("Unable to save the print-ready PNG. Check upload folder permissions and available disk space.");
   }
-  const storedPath = path.join(folder, filename);
   const project = await prisma.artworkProject.upsert({
     where: { orderItemId: itemId },
     update: { zoom, rotation, positionX, positionY },
@@ -489,12 +505,17 @@ export async function saveArtworkExportAction(formData: FormData) {
       positionY,
     },
   });
+  const previousVersion = await prisma.artworkVersion.findFirst({
+    where: { projectId: project.id },
+    orderBy: { version: "desc" },
+    select: { printReadyPath: true },
+  });
   const created = await prisma.artworkVersion.create({
     data: {
       projectId: project.id,
       version,
-      editedPath: storedPath,
-      printReadyPath: storedPath,
+      editedPath,
+      printReadyPath: printReadyPath ?? previousVersion?.printReadyPath ?? editedPath,
       widthPx,
       heightPx,
     },

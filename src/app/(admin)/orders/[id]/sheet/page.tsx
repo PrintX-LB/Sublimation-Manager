@@ -33,7 +33,7 @@ export default async function A4SheetPage({
     (item.artworkProject?.versions ?? []).map((version) => ({
       id: version.id,
       label: `${item.productNameSnapshot} · v${version.version}`,
-      path: version.printReadyPath || version.editedPath,
+      path: version.editedPath,
     })),
   );
   const firstPreview = versions[0]?.path;
@@ -117,14 +117,6 @@ export default async function A4SheetPage({
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" name="includeStrips" defaultChecked />{" "}
             Include production strips
-          </label>
-          <label className="block text-sm">
-            Cut marks
-            <select name="cutMarkMode" defaultValue="CORNER_MARKS" className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-2">
-              <option value="NONE">None</option>
-              <option value="CORNER_MARKS">Corner marks (recommended)</option>
-              <option value="FULL_OUTLINE">Full outline</option>
-            </select>
           </label>
           <label className="block text-sm">
             Sheet filename

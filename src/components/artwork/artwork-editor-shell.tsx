@@ -53,6 +53,7 @@ export function ArtworkEditorShell({
   const handleExport = (
     dataUrl: string,
     settings: { zoom: number; rotation: number; positionX: number; positionY: number },
+    exportFiles: { withContour: boolean; baseDataUrl: string } = { withContour: false, baseDataUrl: dataUrl },
   ) => {
     setExportStatus("saving");
     setExportError(null);
@@ -62,6 +63,8 @@ export function ArtworkEditorShell({
         const form = new FormData();
         form.set("orderItemId", orderItemId);
         form.set("dataUrl", dataUrl);
+        form.set("baseDataUrl", exportFiles.baseDataUrl);
+        form.set("withContour", exportFiles.withContour ? "on" : "off");
         form.set("widthPx", String(width));
         form.set("heightPx", String(height));
         // Include transform settings so they can be stored server-side if needed.

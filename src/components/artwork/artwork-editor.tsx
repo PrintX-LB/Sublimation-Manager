@@ -43,6 +43,7 @@ interface ArtworkEditorProps {
       positionX: number;
       positionY: number;
     },
+    exportFiles?: { withContour: boolean; baseDataUrl: string },
   ) => void;
   onSave?: (
     documentJson: string,
@@ -941,6 +942,8 @@ export function ArtworkEditor({
     if (!canvas || exportPending) return;
     const preview = contourObject.current;
     if (preview) canvas.remove(preview);
+    canvas.requestRenderAll();
+    const baseDataUrl = canvas.toDataURL({ format: "png", multiplier: 1 });
     let exportContour: Rect | null = null;
     if (withContour && contourRef.current.enabled) {
       const object = canvas.getActiveObject() ?? canvas.getObjects()[0];
@@ -976,7 +979,10 @@ export function ArtworkEditor({
       }
     }
     canvas.requestRenderAll();
-    onExport?.(canvas.toDataURL({ format: "png", multiplier: 1 }), transform());
+    const dataUrl = withContour
+      ? canvas.toDataURL({ format: "png", multiplier: 1 })
+      : baseDataUrl;
+    onExport?.(dataUrl, transform(), { withContour, baseDataUrl });
     if (exportContour) canvas.remove(exportContour);
     updateContourPreview();
   };
@@ -1107,7 +1113,14 @@ export function ArtworkEditor({
   return (
     <div
       className={`flex h-full min-h-0 flex-col gap-2 overflow-hidden ${editorFocused ? "outline outline-1 outline-emerald-500/50" : ""}`}
-      onMouseDown={() => workspaceRef.current?.focus()}
+      onMouseDown={(event) => {
+        // Keep native focus inside toolbar/panel controls. Focusing the
+        // workspace from the outer shell previously stole focus from selects
+        // and numeric inputs before their change/click handlers completed.
+        const target = event.target as HTMLElement;
+        if (target.closest("input, textarea, select, button, [contenteditable='true']")) return;
+        workspaceRef.current?.focus();
+      }}
     >
       <div className="scroll-mt-24 flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm">
         <input

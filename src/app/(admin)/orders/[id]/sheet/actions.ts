@@ -8,7 +8,7 @@ import sharp from "sharp";
 import { prisma } from "@/lib/db/prisma";
 import { A4_SHEET, SHEET_LAYOUT, nextSheetFilename, sheetLayout } from "@/lib/production-sheet";
 import { getPrintSheetBuilderFolder, resolveStoredArtworkPath } from "@/lib/order-storage";
-import { cutMarksSvg, mirrorArtworkForSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-render";
+import { artworkPathForCutMarks, cutMarksSvg, mirrorArtworkForSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-render";
 import { nextPrintSheetNumber } from "@/lib/print-sheet-library";
 import { orderItemReference } from "@/lib/orders/item-reference";
 import { createExactSizePdf } from "@/lib/print-pdf";
@@ -25,9 +25,6 @@ export async function createA4PrintSheetAction(formData: FormData) {
   const firstVersionId = String(formData.get("firstVersionId") ?? "");
   const secondVersionId = String(formData.get("secondVersionId") ?? "");
   const includeStrips = String(formData.get("includeStrips") ?? "on") === "on";
-  const requestedCutMarkMode = String(formData.get("cutMarkMode") ?? "").trim();
-  const includeContour = String(formData.get("includeContour") ?? "off") === "on";
-  if (requestedCutMarkMode && !["NONE", "CORNER_MARKS", "FULL_OUTLINE"].includes(requestedCutMarkMode)) throw new Error("INVALID_CUT_MARK_SETTINGS");
   const filenameInput = String(formData.get("filename") ?? "").trim();
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { customer: true, items: { include: { productVariant: { include: { product: { include: { printTemplate: true } } } }, artworkProject: { include: { versions: true } } } } } });
   if (!order) throw new Error("ORDER_NOT_FOUND");
@@ -37,13 +34,7 @@ export async function createA4PrintSheetAction(formData: FormData) {
   const first = selected[0];
   const second = selected[1];
   if (!first || !second) throw new Error("SELECT_TWO_ARTWORK_VERSIONS");
-  const template = first.item.productVariant?.product.printTemplate;
-  const cutMarks = normalizeCutMarkSettings({
-    mode: (requestedCutMarkMode || (includeContour ? "CORNER_MARKS" : "NONE")) as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE",
-    lengthMm: Number(template?.cutMarkLengthMm ?? 8),
-    offsetMm: Number(template?.cutMarkOffsetMm ?? 3),
-    thicknessMm: Number(template?.cutMarkThicknessMm ?? 0.3),
-  });
+  const cutMarks = normalizeCutMarkSettings({ mode: "CORNER_MARKS" });
 
   const printSheetsBase = await getPrintSheetBuilderFolder();
   const orderFolder = path.join(
@@ -53,14 +44,14 @@ export async function createA4PrintSheetAction(formData: FormData) {
     order.orderNumber
   );
 
-  const sourceRelative = first.version.printReadyPath || first.version.editedPath;
+  const sourceRelative = artworkPathForCutMarks(first.version, cutMarks.mode);
   const sourceResolved = await resolveStoredArtworkPath(sourceRelative);
   if (!sourceResolved) throw new Error("INVALID_ARTWORK_PATH");
   await mkdir(orderFolder, { recursive: true });
   const existing = await readdir(orderFolder).catch(() => [] as string[]);
   const filename = nextSheetFilename(filenameInput || `A4_${orderItemReference(order.orderNumber, first.item.itemSequence)}_${orderItemReference(order.orderNumber, second.item.itemSequence)}.pdf`, existing);
   const images = await Promise.all(selected.map(async ({ version }) => {
-    const relative = (includeContour ? version.printReadyPath : version.editedPath) || version.printReadyPath || version.editedPath;
+    const relative = artworkPathForCutMarks(version, cutMarks.mode);
     const resolved = await resolveStoredArtworkPath(relative);
     if (!resolved) throw new Error("INVALID_ARTWORK_PATH");
     const metadata = await sharp(resolved).metadata();

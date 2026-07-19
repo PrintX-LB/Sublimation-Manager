@@ -77,10 +77,6 @@ export function SheetBuilderForm({
 
   // Settings state
   const [includeStrips, setIncludeStrips] = useState(true);
-  const [cutMarkMode, setCutMarkMode] = useState<"NONE" | "CORNER_MARKS" | "FULL_OUTLINE">("CORNER_MARKS");
-  const [cutMarkLengthMm, setCutMarkLengthMm] = useState(8);
-  const [cutMarkOffsetMm, setCutMarkOffsetMm] = useState(3);
-  const [cutMarkThicknessMm, setCutMarkThicknessMm] = useState(0.3);
   const [filename, setFilename] = useState("A4_print_sheet.pdf");
   const [generationRequestKey, setGenerationRequestKey] = useState(() =>
     crypto.randomUUID(),
@@ -227,10 +223,6 @@ export function SheetBuilderForm({
     setSlot3(null);
     setUseSameTwice(false);
     setIncludeStrips(true);
-    setCutMarkMode("CORNER_MARKS");
-    setCutMarkLengthMm(8);
-    setCutMarkOffsetMm(3);
-    setCutMarkThicknessMm(0.3);
     setFilename("A4_print_sheet.pdf");
   };
 
@@ -293,10 +285,6 @@ export function SheetBuilderForm({
       if (effectiveSlot3) form.set("slot3", effectiveSlot3.id);
       form.set("includeStrips", includeStrips ? "on" : "off");
       form.set("includeContour", "off");
-      form.set("cutMarkMode", cutMarkMode);
-      form.set("cutMarkLengthMm", String(cutMarkLengthMm));
-      form.set("cutMarkOffsetMm", String(cutMarkOffsetMm));
-      form.set("cutMarkThicknessMm", String(cutMarkThicknessMm));
       form.set("filename", filename);
       form.set("generationRequestKey", generationRequestKey);
 
@@ -456,7 +444,7 @@ export function SheetBuilderForm({
                     <div className="flex items-start gap-3">
                       <div className="relative h-14 w-20 shrink-0 overflow-hidden rounded border border-slate-800 bg-slate-900">
                         <Image
-                          src={`/api/local-files?path=${encodeURIComponent(version.printReadyPath || version.editedPath)}`}
+                          src={`/api/local-files?path=${encodeURIComponent(version.editedPath)}`}
                           alt=""
                           fill
                           sizes="80px"
@@ -577,7 +565,7 @@ export function SheetBuilderForm({
                     <div className="relative flex h-full w-full items-center justify-center p-2">
                       <div className="relative h-full w-full">
                         <Image
-                          src={`/api/local-files?path=${encodeURIComponent(slot1.printReadyPath || slot1.editedPath)}`}
+                          src={`/api/local-files?path=${encodeURIComponent(slot1.editedPath)}`}
                           alt=""
                           fill
                           className="object-contain"
@@ -658,7 +646,7 @@ export function SheetBuilderForm({
                       {slot1 ? (
                         <div className="relative h-full w-full opacity-60">
                           <Image
-                            src={`/api/local-files?path=${encodeURIComponent(slot1.printReadyPath || slot1.editedPath)}`}
+                            src={`/api/local-files?path=${encodeURIComponent(slot1.editedPath)}`}
                             alt=""
                             fill
                             className="object-contain"
@@ -674,7 +662,7 @@ export function SheetBuilderForm({
                     <div className="relative flex h-full w-full items-center justify-center p-2">
                       <div className="relative h-full w-full">
                         <Image
-                          src={`/api/local-files?path=${encodeURIComponent(slot2.printReadyPath || slot2.editedPath)}`}
+                            src={`/api/local-files?path=${encodeURIComponent(slot2.editedPath)}`}
                           alt=""
                           fill
                           className="object-contain"
@@ -756,7 +744,7 @@ export function SheetBuilderForm({
                       <div className="relative flex h-full w-full items-center justify-center p-2">
                         <div className="relative h-full w-full">
                           <Image
-                            src={`/api/local-files?path=${encodeURIComponent(slot3.printReadyPath || slot3.editedPath)}`}
+                              src={`/api/local-files?path=${encodeURIComponent(slot3.editedPath)}`}
                             alt=""
                             fill
                             className="object-contain"
@@ -838,21 +826,6 @@ export function SheetBuilderForm({
                   />
                 </label>
 
-                <div className="rounded-xl border border-slate-800 bg-[#0f172a]/30 px-3.5 py-2.5">
-                  <label className="block font-semibold text-slate-300" htmlFor="cut-mark-mode">Cut marks</label>
-                  <select id="cut-mark-mode" value={cutMarkMode} onChange={(event) => setCutMarkMode(event.target.value as typeof cutMarkMode)} className="mt-2 w-full rounded-lg border border-slate-700 bg-[#0f172a] px-2 py-2 text-sm text-slate-200">
-                    <option value="NONE">None</option>
-                    <option value="CORNER_MARKS">Corner marks (recommended)</option>
-                    <option value="FULL_OUTLINE">Full outline</option>
-                  </select>
-                  {cutMarkMode !== "NONE" ? (
-                    <div className="mt-2 grid grid-cols-3 gap-2 text-[11px] text-slate-400">
-                      <label>Length (mm)<input type="number" min="0.1" step="0.1" value={cutMarkLengthMm} onChange={(event) => setCutMarkLengthMm(Number(event.target.value))} className="mt-1 w-full rounded border border-slate-700 bg-[#0f172a] px-2 py-1 text-slate-200" /></label>
-                      <label>Offset (mm)<input type="number" min="0" step="0.1" value={cutMarkOffsetMm} onChange={(event) => setCutMarkOffsetMm(Number(event.target.value))} className="mt-1 w-full rounded border border-slate-700 bg-[#0f172a] px-2 py-1 text-slate-200" /></label>
-                      <label>Line (mm)<input type="number" min="0.1" step="0.1" value={cutMarkThicknessMm} onChange={(event) => setCutMarkThicknessMm(Number(event.target.value))} className="mt-1 w-full rounded border border-slate-700 bg-[#0f172a] px-2 py-1 text-slate-200" /></label>
-                    </div>
-                  ) : null}
-                </div>
               </div>
 
               {/* Output Name */}

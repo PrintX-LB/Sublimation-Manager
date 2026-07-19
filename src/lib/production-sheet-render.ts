@@ -12,6 +12,45 @@ export interface CutMarkSettings {
 
 export type ArtworkSize = { width: number; height: number };
 
+/** Select the source that matches the requested production-mark mode. */
+export function artworkPathForCutMarks(
+  version: { editedPath: string | null; printReadyPath: string | null },
+  mode: CutMarkMode,
+) {
+  return mode === "FULL_OUTLINE" ? version.printReadyPath : version.editedPath;
+}
+
+/**
+ * Remove legacy contour strokes that were accidentally baked into older
+ * artwork exports. Only neutral gray, full-height edge strokes are removed;
+ * artwork content and intentional colour marks remain untouched.
+ */
+export async function stripLegacyArtworkContour(input: Buffer) {
+  const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const edgeBand = Math.max(3, Math.floor(info.width * 0.08));
+  const candidates = new Set<number>();
+  for (let x = 0; x < info.width; x += 1) {
+    if (x >= edgeBand && x < info.width - edgeBand) continue;
+    let neutral = 0;
+    for (let y = 0; y < info.height; y += 1) {
+      const offset = (y * info.width + x) * 4;
+      const r = data[offset] ?? 255;
+      const g = data[offset + 1] ?? 255;
+      const b = data[offset + 2] ?? 255;
+      const a = data[offset + 3] ?? 0;
+      if (a > 0 && Math.max(r, g, b) - Math.min(r, g, b) <= 4 && r >= 80 && r <= 245) neutral += 1;
+    }
+    if (neutral / info.height >= 0.7) candidates.add(x);
+  }
+  for (const x of candidates) {
+    for (let y = 0; y < info.height; y += 1) {
+      const offset = (y * info.width + x) * 4;
+      data[offset + 3] = 0;
+    }
+  }
+  return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
+}
+
 const escapeXml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
 
 const safeNumber = (value: number, fallback: number) =>
@@ -43,7 +82,14 @@ export function cutMarksSvg(
   const settings = normalizeCutMarkSettings(settingsInput);
   if (settings.mode === "NONE" || occupiedSlots < 1) return null;
   const layout = sheetLayout();
-  const length = Math.min(mmToPixels(settings.lengthMm, dpi), SHEET_LAYOUT.designWidthPx / 2);
+  // Clamp independently against both axes. Previously a large corner length
+  // was limited only by the artwork width, allowing vertical segments to run
+  // almost the full transfer height and appear as full contour lines.
+  const length = Math.min(
+    mmToPixels(settings.lengthMm, dpi),
+    SHEET_LAYOUT.designWidthPx / 2,
+    SHEET_LAYOUT.designHeightPx / 2,
+  );
   const offset = mmToPixels(settings.offsetMm, dpi);
   const stroke = mmToPixels(settings.thicknessMm, dpi);
   const marks: string[] = [];
@@ -101,7 +147,7 @@ function threeUpCutMarksSvg(settingsInput: Partial<CutMarkSettings> | null | und
   const settings = normalizeCutMarkSettings(settingsInput);
   if (settings.mode === "NONE") return null;
   const layout = threeUpMugLayout(dpi);
-  const length = Math.min(mmToPixels(settings.lengthMm, dpi), layout.widthPx / 2);
+  const length = Math.min(mmToPixels(settings.lengthMm, dpi), layout.widthPx / 2, layout.heightPx / 2);
   const offset = mmToPixels(settings.offsetMm, dpi);
   const stroke = mmToPixels(settings.thicknessMm, dpi);
   const marks: string[] = [];
@@ -140,7 +186,7 @@ export async function composeThreeUpMugSheet(artwork: Buffer[], identifiers: str
  * flipped. The caller composites metadata/production strips separately.
  */
 export async function mirrorArtworkForSheet(input: Buffer): Promise<Buffer> {
-  return sharp(input).flop().png().toBuffer();
+  return sharp(await stripLegacyArtworkContour(input)).flop().png().toBuffer();
 }
 
 /** Composites already-rendered artwork and optional production strips onto the canonical A4 sheet. */

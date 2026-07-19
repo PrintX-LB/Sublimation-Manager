@@ -13,7 +13,7 @@ import {
   sheetLayout,
 } from "@/lib/production-sheet";
 import { getPrintSheetBuilderFolder, resolveStoredArtworkPath } from "@/lib/order-storage";
-import { composeThreeUpMugSheet, cutMarksSvg, mirrorArtworkForSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-render";
+import { artworkPathForCutMarks, composeThreeUpMugSheet, cutMarksSvg, mirrorArtworkForSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-render";
 import { consumePhysicalPrintSheet } from "@/lib/production/recipes";
 import { nextPrintSheetNumber } from "@/lib/print-sheet-library";
 import { createExactSizePdf } from "@/lib/print-pdf";
@@ -42,14 +42,6 @@ export async function generateManualSheetAction(formData: FormData) {
     String(formData.get("attempt3") ?? "").trim(),
   ];
   const includeStrips = String(formData.get("includeStrips") ?? "on") === "on";
-  const includeContour =
-    String(formData.get("includeContour") ?? "off") === "on";
-  const requestedCutMarkMode = String(formData.get("cutMarkMode") ?? "").trim();
-  const cutMarkLengthMm = Number(formData.get("cutMarkLengthMm") ?? 8);
-  const cutMarkOffsetMm = Number(formData.get("cutMarkOffsetMm") ?? 3);
-  const cutMarkThicknessMm = Number(formData.get("cutMarkThicknessMm") ?? 0.3);
-  if (!Number.isFinite(cutMarkLengthMm) || cutMarkLengthMm <= 0 || !Number.isFinite(cutMarkOffsetMm) || cutMarkOffsetMm < 0 || !Number.isFinite(cutMarkThicknessMm) || cutMarkThicknessMm <= 0)
-    throw new Error("INVALID_CUT_MARK_SETTINGS");
   const requested = String(formData.get("filename") ?? "").trim();
   const generationRequestKey = String(
     formData.get("generationRequestKey") ?? "",
@@ -100,12 +92,9 @@ export async function generateManualSheetAction(formData: FormData) {
   const entries = [first, ...(second ? [second] : []), ...(third ? [third] : [])];
   if (entries.length > 3) throw new Error("TOO_MANY_ARTWORK_VERSIONS");
   const template = entries[0]?.project.template ?? entries[0]?.project.orderItem.productVariant?.product.printTemplate;
-  const cutMarks = normalizeCutMarkSettings({
-    mode: (requestedCutMarkMode || (includeContour ? "CORNER_MARKS" : "NONE")) as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE",
-    lengthMm: Number.isFinite(cutMarkLengthMm) ? cutMarkLengthMm : Number(template?.cutMarkLengthMm ?? 8),
-    offsetMm: Number.isFinite(cutMarkOffsetMm) ? cutMarkOffsetMm : Number(template?.cutMarkOffsetMm ?? 3),
-    thicknessMm: Number.isFinite(cutMarkThicknessMm) ? cutMarkThicknessMm : Number(template?.cutMarkThicknessMm ?? 0.3),
-  });
+  // Sheet generation never bakes artwork contours/cut marks. Those belong to
+  // the artwork editor's print-ready export, not the production sheet.
+  const cutMarks = normalizeCutMarkSettings({ mode: "CORNER_MARKS" });
   for (const version of entries) {
     const item = version.project.orderItem;
     const versionTemplate = version.project.template ?? item.productVariant?.product.printTemplate;
@@ -127,9 +116,7 @@ export async function generateManualSheetAction(formData: FormData) {
     )
       throw new Error("ARTWORK_DIMENSIONS_INVALID");
     // Ensure we are transition editing with valid saved/exported version files
-    const pathRelative =
-      (includeContour ? version.printReadyPath : version.editedPath) ||
-      version.printReadyPath;
+    const pathRelative = artworkPathForCutMarks(version, cutMarks.mode);
     if (!pathRelative || !pathRelative.trim()) {
       throw new Error("INVALID_ARTWORK_PATH");
     }
@@ -137,9 +124,7 @@ export async function generateManualSheetAction(formData: FormData) {
   const artworkSizes: Array<{ width: number; height: number }> = [];
   const buffers = await Promise.all(
     entries.map(async (version, index) => {
-      const relative =
-        (includeContour ? version.printReadyPath : version.editedPath) ||
-        version.printReadyPath;
+      const relative = artworkPathForCutMarks(version, cutMarks.mode);
       const resolved = await resolveStoredArtworkPath(relative);
       if (!resolved) throw new Error("INVALID_ARTWORK_PATH");
       const metadata = await sharp(resolved).metadata();

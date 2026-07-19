@@ -15,6 +15,7 @@ import {
 import { nextSheetFilename } from "@/lib/production-sheet";
 import { consumePhysicalPrintSheet } from "@/lib/production/recipes";
 import {
+  artworkPathForCutMarks,
   composeA4PrintSheet,
   mirrorArtworkForSheet,
 } from "@/lib/production-sheet-render";
@@ -273,8 +274,7 @@ export async function recreatePrintSheetFileAction(formData: FormData) {
     for (const slot of sheet.slots.sort(
       (a, b) => a.slotNumber - b.slotNumber,
     )) {
-      const relative =
-        slot.artworkVersion.printReadyPath || slot.artworkVersion.editedPath;
+      const relative = artworkPathForCutMarks(slot.artworkVersion, "CORNER_MARKS");
       const resolved = await resolveStoredArtworkPath(relative);
       if (!resolved) throw new Error("INVALID_ARTWORK_PATH");
       artwork.push(
@@ -293,7 +293,7 @@ export async function recreatePrintSheetFileAction(formData: FormData) {
       await createExactSizePdf(await composeA4PrintSheet(
         [artwork[0]!, artwork[1]!],
         [strips[0]!, strips[1]!],
-        { mode: sheet.cutMarkMode as "NONE" | "CORNER_MARKS" | "FULL_OUTLINE", lengthMm: Number(sheet.cutMarkLengthMm), offsetMm: Number(sheet.cutMarkOffsetMm), thicknessMm: Number(sheet.cutMarkThicknessMm) },
+        { mode: "CORNER_MARKS" },
         sheet.slots.length,
       ), A4_SHEET),
       { flag: "wx" },
