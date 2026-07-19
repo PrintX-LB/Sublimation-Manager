@@ -292,7 +292,7 @@ export function SheetBuilderForm({
       form.set("slot2", effectiveSlot2!.id);
       if (effectiveSlot3) form.set("slot3", effectiveSlot3.id);
       form.set("includeStrips", includeStrips ? "on" : "off");
-      form.set("includeContour", cutMarkMode === "NONE" ? "off" : "on");
+      form.set("includeContour", "off");
       form.set("cutMarkMode", cutMarkMode);
       form.set("cutMarkLengthMm", String(cutMarkLengthMm));
       form.set("cutMarkOffsetMm", String(cutMarkOffsetMm));

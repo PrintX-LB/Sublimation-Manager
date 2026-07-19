@@ -26,7 +26,7 @@ export async function createA4PrintSheetAction(formData: FormData) {
   const secondVersionId = String(formData.get("secondVersionId") ?? "");
   const includeStrips = String(formData.get("includeStrips") ?? "on") === "on";
   const requestedCutMarkMode = String(formData.get("cutMarkMode") ?? "").trim();
-  const includeContour = String(formData.get("includeContour") ?? "off") === "on" || (requestedCutMarkMode && requestedCutMarkMode !== "NONE");
+  const includeContour = String(formData.get("includeContour") ?? "off") === "on";
   if (requestedCutMarkMode && !["NONE", "CORNER_MARKS", "FULL_OUTLINE"].includes(requestedCutMarkMode)) throw new Error("INVALID_CUT_MARK_SETTINGS");
   const filenameInput = String(formData.get("filename") ?? "").trim();
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { customer: true, items: { include: { productVariant: { include: { product: { include: { printTemplate: true } } } }, artworkProject: { include: { versions: true } } } } } });

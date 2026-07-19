@@ -220,7 +220,7 @@ export async function generateQueueSheetAction(formData: FormData) {
   if (expandedAttemptIds[1]) generation.set("attempt2", expandedAttemptIds[1]);
   if (expandedAttemptIds[2]) generation.set("attempt3", expandedAttemptIds[2]);
   generation.set("includeStrips", thirdVersion ? "off" : "on");
-  generation.set("includeContour", "on");
+  generation.set("includeContour", "off");
   generation.set("cutMarkMode", "CORNER_MARKS");
   generation.set(
     "generationRequestKey",
