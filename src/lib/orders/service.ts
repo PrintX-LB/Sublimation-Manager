@@ -508,6 +508,10 @@ export async function transitionOrder(id: string, target: string) {
       deliveredAt: null,
       cancelledAt: normalizedTarget === "Cancelled" ? new Date() : null,
     };
+    if (["Ready to print", "In production", "Completed"].includes(normalizedTarget)) {
+      await ensureProductionAttempts(tx, order.items);
+    }
+
     if (normalizedTarget === COMMIT_STATUS && !order.stockCommitted) {
       // Claim the commit inside the same SQLite transaction. A concurrent approval
       // can then observe zero affected rows and cannot deduct stock twice.
@@ -522,7 +526,6 @@ export async function transitionOrder(id: string, target: string) {
         });
       }
       await commitItems(tx, order, "Order approved");
-      await ensureProductionAttempts(tx, order.items);
       return tx.order.update({
         where: { id },
         data: {
@@ -531,11 +534,6 @@ export async function transitionOrder(id: string, target: string) {
           ...completionFields,
         },
       });
-    }
-    if (normalizedTarget === COMMIT_STATUS) {
-      // Backfill the initial production attempt for orders approved before
-      // attempt tracking existed. The lookup makes repeated transitions safe.
-      await ensureProductionAttempts(tx, order.items);
     }
     if (normalizedTarget === "Cancelled" && order.stockCommitted) {
       await restoreItems(tx, order, "Order cancelled");

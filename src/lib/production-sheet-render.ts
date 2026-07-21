@@ -12,7 +12,6 @@ export interface CutMarkSettings {
 
 export type ArtworkSize = { width: number; height: number };
 
-/** Select the source that matches the requested production-mark mode. */
 export function artworkPathForCutMarks(
   version: { editedPath: string | null; printReadyPath: string | null },
   mode: CutMarkMode,
@@ -20,11 +19,6 @@ export function artworkPathForCutMarks(
   return mode === "FULL_OUTLINE" ? version.printReadyPath : version.editedPath;
 }
 
-/**
- * Remove legacy contour strokes that were accidentally baked into older
- * artwork exports. Only neutral gray, full-height edge strokes are removed;
- * artwork content and intentional colour marks remain untouched.
- */
 export async function stripLegacyArtworkContour(input: Buffer) {
   const { data, info } = await sharp(input).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const edgeBand = Math.max(3, Math.floor(info.width * 0.08));
@@ -68,11 +62,14 @@ export function normalizeCutMarkSettings(input?: Partial<CutMarkSettings> | null
   };
 }
 
+export function mmToPixels(mm: number, dpi: number) {
+  return Math.round((mm / 25.4) * dpi);
+}
+
 function line(x1: number, y1: number, x2: number, y2: number) {
   return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
 }
 
-/** Render production-only cut marks. Artwork is composited separately and is never mirrored here. */
 export function cutMarksSvg(
   settingsInput: Partial<CutMarkSettings> | null | undefined,
   occupiedSlots: number,
@@ -82,42 +79,53 @@ export function cutMarksSvg(
   const settings = normalizeCutMarkSettings(settingsInput);
   if (settings.mode === "NONE" || occupiedSlots < 1) return null;
   const layout = sheetLayout();
-  // Clamp independently against both axes. Previously a large corner length
-  // was limited only by the artwork width, allowing vertical segments to run
-  // almost the full transfer height and appear as full contour lines.
+  const gap = mmToPixels(settings.offsetMm, dpi);
   const length = Math.min(
     mmToPixels(settings.lengthMm, dpi),
-    SHEET_LAYOUT.designWidthPx / 2,
-    SHEET_LAYOUT.designHeightPx / 2,
+    SHEET_LAYOUT.designWidthPx / 4,
+    SHEET_LAYOUT.designHeightPx / 4,
   );
-  const offset = mmToPixels(settings.offsetMm, dpi);
   const stroke = mmToPixels(settings.thicknessMm, dpi);
   const marks: string[] = [];
+
   for (let slot = 0; slot < Math.min(occupiedSlots, 2); slot += 1) {
     const size = artworkSizes?.[slot] ?? { width: SHEET_LAYOUT.designWidthPx, height: SHEET_LAYOUT.designHeightPx };
-    const left = Math.round((SHEET_LAYOUT.designWidthPx - size.width) / 2) + offset;
-    const right = Math.round((SHEET_LAYOUT.designWidthPx - size.width) / 2) + size.width - offset;
-    const top = (slot === 0 ? layout.design1Y : layout.design2Y) + Math.round((SHEET_LAYOUT.designHeightPx - size.height) / 2) + offset;
-    const bottom = (slot === 0 ? layout.design1Y : layout.design2Y) + Math.round((SHEET_LAYOUT.designHeightPx - size.height) / 2) + size.height - offset;
+    const leftEdge = SHEET_LAYOUT.sideMarginPx + Math.round((SHEET_LAYOUT.designWidthPx - size.width) / 2);
+    const rightEdge = leftEdge + size.width;
+    const slotTop = slot === 0 ? layout.design1Y : layout.design2Y;
+    const topEdge = slotTop + Math.round((SHEET_LAYOUT.designHeightPx - size.height) / 2);
+    const bottomEdge = topEdge + size.height;
+
     if (settings.mode === "FULL_OUTLINE") {
-      marks.push(line(left, top, right, top), line(right, top, right, bottom), line(right, bottom, left, bottom), line(left, bottom, left, top));
-    } else {
       marks.push(
-        line(left, top, left + length, top), line(left, top, left, top + length),
-        line(right, top, right - length, top), line(right, top, right, top + length),
-        line(left, bottom, left + length, bottom), line(left, bottom, left, bottom - length),
-        line(right, bottom, right - length, bottom), line(right, bottom, right, bottom - length),
+        line(leftEdge, topEdge, rightEdge, topEdge),
+        line(rightEdge, topEdge, rightEdge, bottomEdge),
+        line(rightEdge, bottomEdge, leftEdge, bottomEdge),
+        line(leftEdge, bottomEdge, leftEdge, topEdge),
+      );
+    } else {
+      // Corner marks drawn INWARD from the design corners
+      marks.push(
+        line(leftEdge, topEdge, leftEdge + length, topEdge),
+        line(leftEdge, topEdge, leftEdge, topEdge + length),
+      );
+      marks.push(
+        line(rightEdge, topEdge, rightEdge - length, topEdge),
+        line(rightEdge, topEdge, rightEdge, topEdge + length),
+      );
+      marks.push(
+        line(leftEdge, bottomEdge, leftEdge + length, bottomEdge),
+        line(leftEdge, bottomEdge, leftEdge, bottomEdge - length),
+      );
+      marks.push(
+        line(rightEdge, bottomEdge, rightEdge - length, bottomEdge),
+        line(rightEdge, bottomEdge, rightEdge, bottomEdge - length),
       );
     }
   }
   return Buffer.from(`<svg width="${SHEET_LAYOUT.widthPx}" height="${SHEET_LAYOUT.heightPx}" xmlns="http://www.w3.org/2000/svg"><g fill="none" stroke="black" stroke-width="${stroke}" stroke-linecap="square">${marks.join("")}</g></svg>`);
 }
 
-export function mmToPixels(mm: number, dpi: number) {
-  return Math.round((mm / 25.4) * dpi);
-}
-
-/** Render unobtrusive order-only labels for the 200×90 mm three-up layout. */
 function threeUpIdentifiersSvg(labels: string[], dpi: number) {
   const layout = threeUpMugLayout(dpi);
   const fontSize = Math.round((8 / 72) * dpi);
@@ -127,10 +135,6 @@ function threeUpIdentifiersSvg(labels: string[], dpi: number) {
     const bottom = top + layout.heightPx;
     const estimatedWidth = label.length * fontSize * 0.58;
     const safeLabel = escapeXml(label);
-    // There is no inter-transfer gap in the 3-up layout. Keep normal short
-    // identifiers at the lower edge, with a white keyline so they remain
-    // readable over artwork. Longer identifiers use the physical left safety
-    // margin vertically, never covering the printable transfer area.
     if (estimatedWidth <= layout.widthPx * 0.55) {
       const x = layout.leftPx + inset;
       const y = bottom + Math.round(layout.labelHeightPx * 0.72);
@@ -147,18 +151,25 @@ function threeUpCutMarksSvg(settingsInput: Partial<CutMarkSettings> | null | und
   const settings = normalizeCutMarkSettings(settingsInput);
   if (settings.mode === "NONE") return null;
   const layout = threeUpMugLayout(dpi);
-  const length = Math.min(mmToPixels(settings.lengthMm, dpi), layout.widthPx / 2, layout.heightPx / 2);
-  const offset = mmToPixels(settings.offsetMm, dpi);
+  const gap = mmToPixels(settings.offsetMm, dpi);
+  const length = Math.min(mmToPixels(settings.lengthMm, dpi), layout.widthPx / 4, layout.heightPx / 4);
   const stroke = mmToPixels(settings.thicknessMm, dpi);
   const marks: string[] = [];
   for (let index = 0; index < Math.min(occupiedSlots, layout.maxSlots); index += 1) {
-    const left = layout.leftPx + offset;
-    const right = layout.leftPx + layout.widthPx - offset;
-    const slotTop = layout.topMarginPx + index * layout.stridePx;
-    const top = slotTop + offset;
-    const bottom = slotTop + layout.heightPx - offset;
-    if (settings.mode === "FULL_OUTLINE") marks.push(line(left, top, right, top), line(right, top, right, bottom), line(right, bottom, left, bottom), line(left, bottom, left, top));
-    else marks.push(line(left, top, left + length, top), line(left, top, left, top + length), line(right, top, right - length, top), line(right, top, right, top + length), line(left, bottom, left + length, bottom), line(left, bottom, left, bottom - length), line(right, bottom, right - length, bottom), line(right, bottom, right, bottom - length));
+    const leftEdge = layout.leftPx;
+    const rightEdge = leftEdge + layout.widthPx;
+    const topEdge = layout.topMarginPx + index * layout.stridePx;
+    const bottomEdge = topEdge + layout.heightPx;
+    if (settings.mode === "FULL_OUTLINE") {
+      marks.push(line(leftEdge, topEdge, rightEdge, topEdge), line(rightEdge, topEdge, rightEdge, bottomEdge), line(rightEdge, bottomEdge, leftEdge, bottomEdge), line(leftEdge, bottomEdge, leftEdge, topEdge));
+    } else {
+      marks.push(
+        line(leftEdge, topEdge, leftEdge + length, topEdge), line(leftEdge, topEdge, leftEdge, topEdge + length),
+        line(rightEdge, topEdge, rightEdge - length, topEdge), line(rightEdge, topEdge, rightEdge, topEdge + length),
+        line(leftEdge, bottomEdge, leftEdge + length, bottomEdge), line(leftEdge, bottomEdge, leftEdge, bottomEdge - length),
+        line(rightEdge, bottomEdge, rightEdge - length, bottomEdge), line(rightEdge, bottomEdge, rightEdge, bottomEdge - length),
+      );
+    }
   }
   return Buffer.from(`<svg width="${SHEET_LAYOUT.widthPx}" height="${SHEET_LAYOUT.heightPx}" xmlns="http://www.w3.org/2000/svg"><g fill="none" stroke="black" stroke-width="${stroke}" stroke-linecap="square">${marks.join("")}</g></svg>`);
 }
@@ -179,17 +190,10 @@ export async function composeThreeUpMugSheet(artwork: Buffer[], identifiers: str
   return sharp({ create: { width: SHEET_LAYOUT.widthPx, height: SHEET_LAYOUT.heightPx, channels: 4, background: { r: 255, g: 255, b: 255, alpha: 1 } } }).composite(composites).withMetadata({ density: A4_SHEET.dpi }).png().toBuffer();
 }
 
-/**
- * Prepare one printable artwork layer for a sublimation sheet.
- *
- * The sheet itself must remain readable, so only the artwork bitmap is
- * flipped. The caller composites metadata/production strips separately.
- */
 export async function mirrorArtworkForSheet(input: Buffer): Promise<Buffer> {
   return sharp(await stripLegacyArtworkContour(input)).flop().png().toBuffer();
 }
 
-/** Composites already-rendered artwork and optional production strips onto the canonical A4 sheet. */
 export async function composeA4PrintSheet(
   artwork: [Buffer, Buffer],
   strips?: [Buffer, Buffer],
@@ -204,8 +208,8 @@ export async function composeA4PrintSheet(
     }),
   ) as [ArtworkSize, ArtworkSize];
   const composites: Array<{ input: Buffer; left: number; top: number }> = [
-    { input: artwork[0], left: Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[0].width) / 2), top: layout.design1Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[0].height) / 2) },
-    { input: artwork[1], left: Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[1].width) / 2), top: layout.design2Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[1].height) / 2) },
+    { input: artwork[0], left: SHEET_LAYOUT.sideMarginPx + Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[0].width) / 2), top: layout.design1Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[0].height) / 2) },
+    { input: artwork[1], left: SHEET_LAYOUT.sideMarginPx + Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[1].width) / 2), top: layout.design2Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[1].height) / 2) },
   ];
   if (strips) {
     composites.push({ input: strips[0], left: 0, top: layout.strip1Y }, { input: strips[1], left: 0, top: layout.strip2Y });

@@ -492,7 +492,7 @@ export default async function OrderDetailPage({
               <form action={transitionOrderAction} className="mt-5">
                 <input type="hidden" name="id" value={order.id} />
                 <input type="hidden" name="status" value={nextStatus} />
-                <button className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white">
+                <button disabled={order.status === "Completed" && !admin} className="flex w-full items-center justify-center gap-2 rounded-lg bg-brand-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed">
                   {nextStatus}
                   <ArrowRight size={15} />
                 </button>
@@ -505,7 +505,8 @@ export default async function OrderDetailPage({
                 id="order-status"
                 name="status"
                 defaultValue={order.status}
-                className="h-10 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm"
+                disabled={order.status === "Completed" && !admin}
+                className="h-10 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <option value="">Change status…</option>
                 {ORDER_STATUSES.map((status) => (
@@ -514,7 +515,7 @@ export default async function OrderDetailPage({
                   </option>
                 ))}
               </select>
-              <button className="h-10 w-full whitespace-nowrap rounded-lg border border-slate-700 px-3 text-sm font-semibold text-slate-100 hover:bg-slate-800">
+              <button disabled={order.status === "Completed" && !admin} className="h-10 w-full whitespace-nowrap rounded-lg border border-slate-700 px-3 text-sm font-semibold text-slate-100 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed">
                 Change Status
               </button>
             </form>

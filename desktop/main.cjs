@@ -241,11 +241,30 @@ function createMainWindow() {
   mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
   mainWindow.webContents.on("will-navigate", (event, url) => { if (!url.startsWith(`${appOrigin}/`)) event.preventDefault(); });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith(`${appOrigin}/`)) mainWindow.loadURL(url);
-    else if (url.startsWith("https://")) shell.openExternal(url);
+    if (url.includes("/api/local-files")) {
+      return { action: "allow" };
+    } else if (url.startsWith(`${appOrigin}/`)) {
+      mainWindow.loadURL(url);
+      return { action: "deny" };
+    } else if (url.startsWith("https://")) {
+      shell.openExternal(url);
+      return { action: "deny" };
+    }
     return { action: "deny" };
   });
-  mainWindow.once("ready-to-show", () => { splashWindow?.close(); splashWindow = undefined; mainWindow.show(); if (!isDevelopment) mainWindow.maximize(); });
+  mainWindow.once("ready-to-show", () => { 
+    splashWindow?.close(); 
+    splashWindow = undefined; 
+    mainWindow.show(); 
+    if (!isDevelopment) mainWindow.maximize(); 
+    mainWindow.focus();
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.focus();
+        mainWindow.webContents.focus();
+      }
+    }, 100);
+  });
   mainWindow.on("closed", () => { mainWindow = undefined; });
   mainWindow.loadURL(`${appOrigin}/dashboard`);
 }

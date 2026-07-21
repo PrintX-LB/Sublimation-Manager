@@ -127,7 +127,8 @@ export function OrderActionsMenu({
                   name="status"
                   defaultValue={order.status}
                   onChange={(e) => e.target.form?.requestSubmit()}
-                  className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-brand-500"
+                  disabled={isCompleted && !adminUnlocked}
+                  className="w-full rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <option value="Draft">Draft</option>
                   <option value="Ready to print">Ready to print</option>

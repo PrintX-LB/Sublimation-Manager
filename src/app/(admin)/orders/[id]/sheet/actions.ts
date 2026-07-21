@@ -16,9 +16,11 @@ import { createExactSizePdf } from "@/lib/print-pdf";
 function text(value: unknown) { return String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character); }
 
 function stripSvg(lines: string[]) {
-  const lineHeight = 50;
-  return `<svg width="${SHEET_LAYOUT.widthPx}" height="${SHEET_LAYOUT.stripHeightPx}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><rect x="2" y="2" width="${SHEET_LAYOUT.widthPx - 4}" height="${SHEET_LAYOUT.stripHeightPx - 4}" fill="none" stroke="black" stroke-width="3"/><g fill="black" font-family="Arial, sans-serif" font-size="36">${lines.map((line, index) => `<text x="34" y="${65 + index * lineHeight}">${text(line)}</text>`).join("")}</g></svg>`;
+  const lineHeight = 48;
+  const paddingTop = 40;
+  return `<svg width="${SHEET_LAYOUT.widthPx}" height="${SHEET_LAYOUT.stripHeightPx}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g fill="#1a1a1a" font-family="Arial, Helvetica, sans-serif">${lines.map((ln, i) => `<text x="${SHEET_LAYOUT.sideMarginPx + 20}" y="${paddingTop + i * lineHeight}" font-size="${i === 0 ? 42 : 34}" font-weight="${i === 0 ? "bold" : "normal"}" opacity="${i === 0 ? 1 : 0.75}">${text(ln)}</text>`).join("")}</g></svg>`;
 }
+
 
 export async function createA4PrintSheetAction(formData: FormData) {
   const orderId = String(formData.get("orderId") ?? "");
@@ -63,8 +65,8 @@ export async function createA4PrintSheetAction(formData: FormData) {
   if (!firstImage || !secondImage) throw new Error("SELECT_TWO_ARTWORK_VERSIONS");
   const layout = sheetLayout();
   const composites: Array<{ input: Buffer; left: number; top: number }> = [
-    { input: firstImage.input, left: 0, top: layout.design1Y },
-    { input: secondImage.input, left: 0, top: layout.design2Y },
+    { input: firstImage.input, left: SHEET_LAYOUT.sideMarginPx, top: layout.design1Y },
+    { input: secondImage.input, left: SHEET_LAYOUT.sideMarginPx, top: layout.design2Y },
   ];
   if (includeStrips) {
     const stripLines = selected.map(({ item }, index) => stripSvg([order.orderNumber, order.customer.fullName, `${item.productNameSnapshot} · ${item.productVariant?.name ?? "Standard"}`, `Transfer ${index + 1} of 2`, `Due: ${order.dueDate?.toLocaleDateString("en-GB") ?? "Not set"}`, `Artwork v${selected[index]?.version.version ?? "?"}`]));

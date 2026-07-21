@@ -27,7 +27,10 @@ const escapeXml = (value: string) =>
       ] ?? c,
   );
 function stripSvg(lines: string[]) {
-  return `<svg width="${SHEET_LAYOUT.widthPx}" height="${SHEET_LAYOUT.stripHeightPx}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><rect x="2" y="2" width="${SHEET_LAYOUT.widthPx - 4}" height="${SHEET_LAYOUT.stripHeightPx - 4}" fill="none" stroke="black" stroke-width="3"/><g fill="black" font-family="Arial" font-size="36">${lines.map((line, i) => `<text x="34" y="${65 + i * 50}">${escapeXml(line)}</text>`).join("")}</g></svg>`;
+  // Clean info block – no border box, just well-spaced text
+  const lineHeight = 48;
+  const paddingTop = 40;
+  return `<svg width="${SHEET_LAYOUT.widthPx}" height="${SHEET_LAYOUT.stripHeightPx}" xmlns="http://www.w3.org/2000/svg"><rect width="100%" height="100%" fill="white"/><g fill="#1a1a1a" font-family="Arial, Helvetica, sans-serif">${lines.map((ln, i) => `<text x="${SHEET_LAYOUT.sideMarginPx + 20}" y="${paddingTop + i * lineHeight}" font-size="${i === 0 ? 42 : 34}" font-weight="${i === 0 ? "bold" : "normal"}" opacity="${i === 0 ? 1 : 0.75}">${escapeXml(ln)}</text>`).join("")}</g></svg>`;
 }
 
 import { transitionOrder } from "@/lib/orders/service";
@@ -195,8 +198,8 @@ export async function generateManualSheetAction(formData: FormData) {
   } else {
   const layout = sheetLayout();
   const overlays: Array<{ input: Buffer; left: number; top: number }> = [
-    { input: buffers[0]!, left: Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[0]!.width) / 2), top: layout.design1Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[0]!.height) / 2) },
-    { input: buffers[1]!, left: Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[1]!.width) / 2), top: layout.design2Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[1]!.height) / 2) },
+    { input: buffers[0]!, left: SHEET_LAYOUT.sideMarginPx + Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[0]!.width) / 2), top: layout.design1Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[0]!.height) / 2) },
+    { input: buffers[1]!, left: SHEET_LAYOUT.sideMarginPx + Math.round((SHEET_LAYOUT.designWidthPx - artworkSizes[1]!.width) / 2), top: layout.design2Y + Math.round((SHEET_LAYOUT.designHeightPx - artworkSizes[1]!.height) / 2) },
   ];
   if (includeStrips) {
     entries.forEach((version, index) => {

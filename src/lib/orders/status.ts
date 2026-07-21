@@ -7,7 +7,7 @@ export const ORDER_STATUSES = [
 ] as const;
 
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
-export const COMMIT_STATUS: OrderStatus = "Ready to print";
+export const COMMIT_STATUS: OrderStatus = "In production";
 
 export const LEGACY_STATUS_MAP: Record<string, OrderStatus> = {
   "Awaiting customer files": "Draft",

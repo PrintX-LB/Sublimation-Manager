@@ -86,6 +86,7 @@ export function SheetBuilderForm({
   const [isDragOverSlot1, setIsDragOverSlot1] = useState(false);
   const [isDragOverSlot2, setIsDragOverSlot2] = useState(false);
   const [isDragOverSlot3, setIsDragOverSlot3] = useState(false);
+  const [isDragOverSheet, setIsDragOverSheet] = useState(false);
 
   const isThreeUp = Boolean(
     (slot1 && slot1.templateWidthMm === 200 && slot1.templateHeightMm === 90) ||
@@ -170,11 +171,12 @@ export function SheetBuilderForm({
     }
   };
 
-  const handleDrop = (e: React.DragEvent, slotIndex: 1 | 2 | 3) => {
+  const handleDrop = (e: React.DragEvent, slotIndex?: 1 | 2 | 3) => {
     e.preventDefault();
     setIsDragOverSlot1(false);
     setIsDragOverSlot2(false);
     setIsDragOverSlot3(false);
+    setIsDragOverSheet(false);
 
     try {
       const data = JSON.parse(e.dataTransfer.getData("text/plain"));
@@ -188,8 +190,13 @@ export function SheetBuilderForm({
           setSlot1(targetVersion);
         } else if (slotIndex === 2) {
           setSlot2(targetVersion);
-        } else {
+        } else if (slotIndex === 3) {
           setSlot3(targetVersion);
+        } else {
+          // Automatic placement onto the overall sheet
+          if (!slot1) setSlot1(targetVersion);
+          else if (!slot2) setSlot2(targetVersion);
+          else if (isThreeUp && !slot3) setSlot3(targetVersion);
         }
       } else if (source === "slot1" && slotIndex === 2) {
         // Dragged from slot 1 to slot 2
@@ -541,7 +548,17 @@ export function SheetBuilderForm({
 
           {/* Visual A4 Aspect Frame */}
           <div className="flex min-h-[500px] flex-1 items-center justify-center rounded-xl border border-slate-900 bg-slate-950/40 p-4">
-            <div className="relative aspect-[210/297] w-full max-w-[380px] rounded-lg border border-slate-700 bg-white p-3 text-slate-900 shadow-2xl transition-all">
+            <div 
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragOverSheet(true);
+              }}
+              onDragLeave={() => setIsDragOverSheet(false)}
+              onDrop={(e) => handleDrop(e)}
+              className={`relative aspect-[210/297] w-full max-w-[380px] rounded-lg border bg-white p-3 text-slate-900 shadow-2xl transition-all ${
+                isDragOverSheet ? "border-brand-500 ring-2 ring-brand-500 ring-offset-2 ring-offset-slate-900" : "border-slate-700"
+              }`}
+            >
               <div className="flex h-full flex-col justify-between space-y-2">
                 {/* SLOT 1 CONTAINER */}
                 <div

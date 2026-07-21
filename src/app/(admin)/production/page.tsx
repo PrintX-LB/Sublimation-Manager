@@ -4,6 +4,7 @@ import { PageHeading } from "@/components/admin/page-heading";
 import { ProductionIncidentButton } from "@/components/admin/production-incident-button";
 import { prisma } from "@/lib/db/prisma";
 import { formatUSD } from "@/lib/money";
+import { getAdminSession } from "@/lib/admin-session";
 import {
   PRODUCTION_COLUMNS,
   groupProductionOrders,
@@ -19,6 +20,7 @@ import { orderItemReference } from "@/lib/orders/item-reference";
 export const dynamic = "force-dynamic";
 
 export default async function ProductionPage() {
+  const admin = await getAdminSession();
   const orders = await prisma.order.findMany({
     where: { status: { in: [...PRODUCTION_COLUMNS] } },
     include: {
@@ -96,7 +98,7 @@ export default async function ProductionPage() {
               <div className="flex-1 space-y-3 overflow-y-auto p-3">
                 {groups[status].length ? (
                     groups[status].map((order) => (
-                    <CompactProductionCard key={order.id} order={order} now={now} />
+                    <CompactProductionCard key={order.id} order={order} now={now} adminUnlocked={admin} />
                   ))
                 ) : (
                   <p className="py-10 text-center text-xs text-slate-500">
@@ -132,7 +134,7 @@ type BoardOrder = Awaited<ReturnType<typeof prisma.order.findMany>>[number] & {
   }>;
 };
 
-function CompactProductionCard({ order, now }: { order: BoardOrder; now: Date }) {
+function CompactProductionCard({ order, now, adminUnlocked }: { order: BoardOrder; now: Date; adminUnlocked: boolean }) {
   const paid = order.payments.reduce(
     (sum, payment) => sum + Number(payment.amount),
     0,
@@ -242,10 +244,10 @@ function CompactProductionCard({ order, now }: { order: BoardOrder; now: Date })
         ) : null}
         <form action={transitionOrderAction} className="flex items-center gap-1">
           <input type="hidden" name="id" value={order.id} />
-          <select name="status" defaultValue={order.status} aria-label="Change status" className="max-w-[115px] rounded border border-slate-700 bg-slate-950 px-1 py-1 text-[11px]">
+          <select name="status" defaultValue={order.status} aria-label="Change status" disabled={order.status === "Completed" && !adminUnlocked} className="max-w-[115px] rounded border border-slate-700 bg-slate-950 px-1 py-1 text-[11px] disabled:opacity-50 disabled:cursor-not-allowed">
             {ORDER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
           </select>
-          <button className="rounded border border-slate-700 px-2 py-1 text-[11px]">Change</button>
+          <button disabled={order.status === "Completed" && !adminUnlocked} className="rounded border border-slate-700 px-2 py-1 text-[11px] disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-800 transition">Change</button>
         </form>
         <ProductionIncidentButton
           items={order.items.map((item) => ({
