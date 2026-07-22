@@ -104,22 +104,29 @@ export function cutMarksSvg(
         line(leftEdge, bottomEdge, leftEdge, topEdge),
       );
     } else {
-      // Corner marks drawn INWARD from the design corners
+      // Horizontal marks: start at design edge + gap, extend toward sheet border
+      // Vertical marks: start at design edge + gap, extend toward sheet border
+      const hLeft1  = 0;              // horizontal tick starts at left sheet edge
+      const hLeft2  = leftEdge - gap; // horizontal tick ends just before design
+      const hRight1 = rightEdge + gap;           // horizontal tick starts just after design
+      const hRight2 = SHEET_LAYOUT.widthPx;      // horizontal tick ends at right sheet edge
+      const vTop1   = 0;              // vertical tick starts at top sheet edge
+      const vTop2   = topEdge - gap; // vertical tick ends just before design
+      const vBot1   = bottomEdge + gap;            // vertical tick starts just after design
+      const vBot2   = SHEET_LAYOUT.heightPx;       // vertical tick ends at bottom sheet edge
       marks.push(
-        line(leftEdge, topEdge, leftEdge + length, topEdge),
-        line(leftEdge, topEdge, leftEdge, topEdge + length),
-      );
-      marks.push(
-        line(rightEdge, topEdge, rightEdge - length, topEdge),
-        line(rightEdge, topEdge, rightEdge, topEdge + length),
-      );
-      marks.push(
-        line(leftEdge, bottomEdge, leftEdge + length, bottomEdge),
-        line(leftEdge, bottomEdge, leftEdge, bottomEdge - length),
-      );
-      marks.push(
-        line(rightEdge, bottomEdge, rightEdge - length, bottomEdge),
-        line(rightEdge, bottomEdge, rightEdge, bottomEdge - length),
+        // Top-Left corner
+        line(hLeft1, topEdge, hLeft2, topEdge),
+        line(leftEdge, vTop1, leftEdge, vTop2),
+        // Top-Right corner
+        line(hRight1, topEdge, hRight2, topEdge),
+        line(rightEdge, vTop1, rightEdge, vTop2),
+        // Bottom-Left corner
+        line(hLeft1, bottomEdge, hLeft2, bottomEdge),
+        line(leftEdge, vBot1, leftEdge, vBot2),
+        // Bottom-Right corner
+        line(hRight1, bottomEdge, hRight2, bottomEdge),
+        line(rightEdge, vBot1, rightEdge, vBot2),
       );
     }
   }
@@ -163,11 +170,29 @@ function threeUpCutMarksSvg(settingsInput: Partial<CutMarkSettings> | null | und
     if (settings.mode === "FULL_OUTLINE") {
       marks.push(line(leftEdge, topEdge, rightEdge, topEdge), line(rightEdge, topEdge, rightEdge, bottomEdge), line(rightEdge, bottomEdge, leftEdge, bottomEdge), line(leftEdge, bottomEdge, leftEdge, topEdge));
     } else {
+      const sheetW = SHEET_LAYOUT.widthPx;
+      const sheetH = SHEET_LAYOUT.heightPx;
+      const hLeft1  = 0;
+      const hLeft2  = leftEdge - gap;
+      const hRight1 = rightEdge + gap;
+      const hRight2 = sheetW;
+      const vTop1   = 0;
+      const vTop2   = topEdge - gap;
+      const vBot1   = bottomEdge + gap;
+      const vBot2   = sheetH;
       marks.push(
-        line(leftEdge, topEdge, leftEdge + length, topEdge), line(leftEdge, topEdge, leftEdge, topEdge + length),
-        line(rightEdge, topEdge, rightEdge - length, topEdge), line(rightEdge, topEdge, rightEdge, topEdge + length),
-        line(leftEdge, bottomEdge, leftEdge + length, bottomEdge), line(leftEdge, bottomEdge, leftEdge, bottomEdge - length),
-        line(rightEdge, bottomEdge, rightEdge - length, bottomEdge), line(rightEdge, bottomEdge, rightEdge, bottomEdge - length),
+        // Top-Left
+        line(hLeft1, topEdge, hLeft2, topEdge),
+        line(leftEdge, vTop1, leftEdge, vTop2),
+        // Top-Right
+        line(hRight1, topEdge, hRight2, topEdge),
+        line(rightEdge, vTop1, rightEdge, vTop2),
+        // Bottom-Left
+        line(hLeft1, bottomEdge, hLeft2, bottomEdge),
+        line(leftEdge, vBot1, leftEdge, vBot2),
+        // Bottom-Right
+        line(hRight1, bottomEdge, hRight2, bottomEdge),
+        line(rightEdge, vBot1, rightEdge, vBot2),
       );
     }
   }
