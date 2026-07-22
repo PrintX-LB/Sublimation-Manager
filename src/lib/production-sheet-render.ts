@@ -104,22 +104,20 @@ export function cutMarksSvg(
         line(leftEdge, bottomEdge, leftEdge, topEdge),
       );
     } else {
-      // Corner marks drawn INWARD from the design corners
+      // Corner marks drawn OUTWARD with a gap from the design corners
       marks.push(
-        line(leftEdge, topEdge, leftEdge + length, topEdge),
-        line(leftEdge, topEdge, leftEdge, topEdge + length),
-      );
-      marks.push(
-        line(rightEdge, topEdge, rightEdge - length, topEdge),
-        line(rightEdge, topEdge, rightEdge, topEdge + length),
-      );
-      marks.push(
-        line(leftEdge, bottomEdge, leftEdge + length, bottomEdge),
-        line(leftEdge, bottomEdge, leftEdge, bottomEdge - length),
-      );
-      marks.push(
-        line(rightEdge, bottomEdge, rightEdge - length, bottomEdge),
-        line(rightEdge, bottomEdge, rightEdge, bottomEdge - length),
+        // Top-Left
+        line(leftEdge - gap - length, topEdge, leftEdge - gap, topEdge),
+        line(leftEdge, topEdge - gap - length, leftEdge, topEdge - gap),
+        // Top-Right
+        line(rightEdge + gap, topEdge, rightEdge + gap + length, topEdge),
+        line(rightEdge, topEdge - gap - length, rightEdge, topEdge - gap),
+        // Bottom-Left
+        line(leftEdge - gap - length, bottomEdge, leftEdge - gap, bottomEdge),
+        line(leftEdge, bottomEdge + gap, leftEdge, bottomEdge + gap + length),
+        // Bottom-Right
+        line(rightEdge + gap, bottomEdge, rightEdge + gap + length, bottomEdge),
+        line(rightEdge, bottomEdge + gap, rightEdge, bottomEdge + gap + length),
       );
     }
   }
@@ -164,10 +162,18 @@ function threeUpCutMarksSvg(settingsInput: Partial<CutMarkSettings> | null | und
       marks.push(line(leftEdge, topEdge, rightEdge, topEdge), line(rightEdge, topEdge, rightEdge, bottomEdge), line(rightEdge, bottomEdge, leftEdge, bottomEdge), line(leftEdge, bottomEdge, leftEdge, topEdge));
     } else {
       marks.push(
-        line(leftEdge, topEdge, leftEdge + length, topEdge), line(leftEdge, topEdge, leftEdge, topEdge + length),
-        line(rightEdge, topEdge, rightEdge - length, topEdge), line(rightEdge, topEdge, rightEdge, topEdge + length),
-        line(leftEdge, bottomEdge, leftEdge + length, bottomEdge), line(leftEdge, bottomEdge, leftEdge, bottomEdge - length),
-        line(rightEdge, bottomEdge, rightEdge - length, bottomEdge), line(rightEdge, bottomEdge, rightEdge, bottomEdge - length),
+        // Top-Left
+        line(leftEdge - gap - length, topEdge, leftEdge - gap, topEdge),
+        line(leftEdge, topEdge - gap - length, leftEdge, topEdge - gap),
+        // Top-Right
+        line(rightEdge + gap, topEdge, rightEdge + gap + length, topEdge),
+        line(rightEdge, topEdge - gap - length, rightEdge, topEdge - gap),
+        // Bottom-Left
+        line(leftEdge - gap - length, bottomEdge, leftEdge - gap, bottomEdge),
+        line(leftEdge, bottomEdge + gap, leftEdge, bottomEdge + gap + length),
+        // Bottom-Right
+        line(rightEdge + gap, bottomEdge, rightEdge + gap + length, bottomEdge),
+        line(rightEdge, bottomEdge + gap, rightEdge, bottomEdge + gap + length),
       );
     }
   }
