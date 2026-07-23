@@ -257,7 +257,25 @@ export async function updateOrderAction(id: string, _state: FormState, formData:
   let items: unknown = []; try { items = JSON.parse(String(formData.get("items") ?? "[]")); } catch { return { message: "Order items are invalid." }; }
   const parsed = orderInputSchema.safeParse({ customerId: formData.get("customerId"), newCustomerName: "", newCustomerPhone: "", newCustomerEmail: "", dueDate: formData.get("dueDate"), deliveryMethod: formData.get("deliveryMethod"), discountType: formData.get("discountType"), discountValue: formData.get("discountValue"), deliveryCharge: formData.get("deliveryCharge"), customerNotes: formData.get("customerNotes"), internalNotes: formData.get("internalNotes"), isTestOrder: formData.get("isTestOrder") === "on", items });
   if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Check the order details." };
-  try { await updateDraftOrder(id, parsed.data); } catch (error) { return { message: error instanceof Error && error.message === "ORDER_EDIT_RESTRICTED" ? "Only Draft orders without committed stock can be fully edited." : "The order could not be updated." }; }
+  let order;
+  try { order = await updateDraftOrder(id, parsed.data); } catch (error) { return { message: error instanceof Error && error.message === "ORDER_EDIT_RESTRICTED" ? "Only Draft orders without committed stock can be fully edited." : "The order could not be updated." }; }
+  
+  const customer = await prisma.customer.findUnique({ where: { id: parsed.data.customerId }, select: { fullName: true } });
+  await ensureOrderFolder(order.orderNumber, customer?.fullName);
+  const savedArtworkPaths: string[] = [];
+  try {
+    for (const [index, item] of order.items.entries()) {
+      const file = formData.get(`artwork-${index}`);
+      if (!(file instanceof File) || file.size === 0) continue;
+      const relative = await saveArtworkFile(file, order.orderNumber, "original", order.createdAt.getFullYear(), order.createdAt.getMonth() + 1, customer?.fullName);
+      savedArtworkPaths.push(relative);
+      await prisma.orderItem.update({ where: { id: item.id }, data: { customerArtworkPath: relative } });
+      await prisma.orderFile.create({ data: { orderId: order.id, originalFilename: file.name, storagePath: relative, mimeType: file.type, sizeBytes: file.size } });
+    }
+  } catch (error) {
+    await Promise.all(savedArtworkPaths.map((storedPath) => rm(storedPath, { force: true })));
+    return { message: "The order was updated, but new artwork uploads failed." };
+  }
   revalidatePath(`/orders/${id}`); redirect(`/orders/${id}`);
 }
 export async function transitionOrderAction(formData: FormData) {

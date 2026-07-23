@@ -465,7 +465,7 @@ export async function updateDraftOrder(id: string, input: OrderInput) {
 
     const usedSequences = new Set<number>();
     let nextSequence = Math.max(0, ...existing.items.map((item) => item.itemSequence)) + 1;
-    const items = lines.map((line) => {
+    const itemsToUpsert = lines.map((line) => {
       const requested = line.itemSequence;
       const itemSequence = requested && Number.isInteger(requested) && requested > 0 && !usedSequences.has(requested)
         ? requested
@@ -485,8 +485,37 @@ export async function updateDraftOrder(id: string, input: OrderInput) {
         lineTotal: calculateTotals([line], "fixed", "0", "0").total,
       };
     });
-    await tx.orderItem.deleteMany({ where: { orderId: id } });
-    return tx.order.update({ where: { id }, data: { customerId: input.customerId ?? undefined, dueDate: input.dueDate ? new Date(`${input.dueDate}T00:00:00.000Z`) : null, deliveryMethod: input.deliveryMethod || null, discountType: input.discountType, discountValue: input.discountValue, deliveryCharge: input.deliveryCharge, subtotal: totals.subtotal, total: totals.total, customerNotes: input.customerNotes || null, internalNotes: input.internalNotes || null, isTestOrder: input.isTestOrder ?? false, items: { create: items } }, include: { items: true } });
+    
+    await tx.orderItem.deleteMany({ 
+      where: { 
+        orderId: id,
+        itemSequence: { notIn: Array.from(usedSequences) }
+      } 
+    });
+
+    for (const item of itemsToUpsert) {
+      await tx.orderItem.upsert({
+        where: { orderId_itemSequence: { orderId: id, itemSequence: item.itemSequence } },
+        update: {
+          productVariantId: item.productVariantId,
+          description: item.description,
+          productNameSnapshot: item.productNameSnapshot,
+          skuSnapshot: item.skuSnapshot,
+          productionCostSnapshot: item.productionCostSnapshot,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          lineDiscountType: item.lineDiscountType,
+          lineDiscountValue: item.lineDiscountValue,
+          lineTotal: item.lineTotal,
+        },
+        create: {
+          orderId: id,
+          ...item
+        }
+      });
+    }
+
+    return tx.order.update({ where: { id }, data: { customerId: input.customerId ?? undefined, dueDate: input.dueDate ? new Date(`${input.dueDate}T00:00:00.000Z`) : null, deliveryMethod: input.deliveryMethod || null, discountType: input.discountType, discountValue: input.discountValue, deliveryCharge: input.deliveryCharge, subtotal: totals.subtotal, total: totals.total, customerNotes: input.customerNotes || null, internalNotes: input.internalNotes || null, isTestOrder: input.isTestOrder ?? false }, include: { items: true } });
   });
 }
 
