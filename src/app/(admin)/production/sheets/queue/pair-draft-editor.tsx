@@ -49,11 +49,9 @@ export function PairDraftEditor({
           </div>
         ))}
       </div>
-      {slots[0]?.id ? <input type="hidden" name="attempt1" value={slots[0].id} /> : null}
-      {slots[1]?.id ? <input type="hidden" name="attempt2" value={slots[1].id} /> : null}
-      {slots[2]?.id ? <input type="hidden" name="attempt3" value={slots[2].id} /> : null}
+      {slots.map((slot, index) => slot?.id ? <input key={`${index}-${slot.id}`} type="hidden" name="attempt" value={slot.id} /> : null)}
       <input type="hidden" name="generationRequestKey" value={generationRequestKey} />
-      <button disabled={!slots[0] || !slots[1]} className="mt-3 w-full rounded bg-emerald-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">Generate Physical Sheet</button>
+      <button disabled={slots.filter(Boolean).length === 0} className="mt-3 w-full rounded bg-emerald-600 px-3 py-2 text-sm font-semibold disabled:opacity-40">Generate Physical Sheet</button>
     </form>
   );
 }

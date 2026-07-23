@@ -151,7 +151,6 @@ function threeUpCutMarksSvg(settingsInput: Partial<CutMarkSettings> | null | und
   const settings = normalizeCutMarkSettings(settingsInput);
   if (settings.mode === "NONE") return null;
   const layout = threeUpMugLayout(dpi);
-  const gap = mmToPixels(settings.offsetMm, dpi);
   const length = Math.min(mmToPixels(settings.lengthMm, dpi), layout.widthPx / 4, layout.heightPx / 4);
   const stroke = mmToPixels(settings.thicknessMm, dpi);
   const marks: string[] = [];

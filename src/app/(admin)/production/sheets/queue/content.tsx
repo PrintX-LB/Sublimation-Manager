@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db/prisma";
-import { SHEET_LAYOUT, mmToPixels } from "@/lib/production-sheet";
+import { mmToPixels } from "@/lib/production-sheet";
 import {
   suggestGroups,
   templateCompatibilityKey,
@@ -28,11 +28,16 @@ const artworkVersionFor = (item: {
     (version) => version.id === item.artworkProject?.activeVersionId,
   ) ?? item.artworkProject?.versions[0];
 
+import { calculateDynamicLayout, A3_SHEET, A4_SHEET } from "@/lib/production-sheet";
+
 export async function AutomaticPairingContent({
   params,
 }: {
-  params: { generated?: string };
+  params: { generated?: string; paperSize?: string };
 }) {
+  const paperSizeName = params.paperSize === "A3" ? "A3" : "A4";
+  const sheetDef = paperSizeName === "A3" ? A3_SHEET : A4_SHEET;
+
   const attempts = await prisma.productionAttempt.findMany({
     where: {
       status: "Ready to Print",
@@ -82,8 +87,11 @@ export async function AutomaticPairingContent({
     }
     const widthPx = mmToPixels(Number(template.widthMm), template.dpi);
     const heightPx = mmToPixels(Number(template.heightMm), template.dpi);
-    if (widthPx < 1 || heightPx < 1 || widthPx > SHEET_LAYOUT.designWidthPx || heightPx > SHEET_LAYOUT.designHeightPx) {
-      blocked.push({ id: attempt.id, orderNumber: attempt.orderItem.order.orderNumber, itemSequence: attempt.orderItem.itemSequence, reason: `Template is ${template.widthMm}×${template.heightMm} mm and is larger than the available A4 transfer slot.` });
+
+    const layout = calculateDynamicLayout(Number(template.widthMm), Number(template.heightMm), sheetDef);
+    
+    if (layout.maxSlots === 0) {
+      blocked.push({ id: attempt.id, orderNumber: attempt.orderItem.order.orderNumber, itemSequence: attempt.orderItem.itemSequence, reason: `Template is ${template.widthMm}×${template.heightMm} mm and is larger than the available ${paperSizeName} transfer slot.` });
       continue;
     }
     if (version.widthPx !== widthPx || version.heightPx !== heightPx) {
@@ -131,14 +139,24 @@ export async function AutomaticPairingContent({
       });
     }
   }
-  const { groups, unpaired } = suggestGroups(eligible, (item) => item.compatibilityKey.includes("_2362X1063_") ? 3 : 2);
+  const { groups, unpaired } = suggestGroups(eligible, (item) => {
+    // Parse width and height back from compatibility key or use item's template
+    const match = item.compatibilityKey.match(/_(\d+)X(\d+)_/);
+    if (!match) return 1;
+    // We have pixels, let's reverse to mm (assuming 300dpi, but we can extract DPI)
+    const dpiMatch = item.compatibilityKey.match(/_(\d+)DPI_/);
+    const dpi = dpiMatch ? parseInt(dpiMatch[1]!, 10) : 300;
+    const wMm = (parseInt(match[1]!, 10) * 25.4) / dpi;
+    const hMm = (parseInt(match[2]!, 10) * 25.4) / dpi;
+    return calculateDynamicLayout(wMm, hMm, sheetDef).maxSlots;
+  });
   const fullSheets = groups.length;
   const totalSheets = fullSheets + unpaired.length;
   const urgentCount = eligible.filter((item) => item.priority === "Urgent").length;
   const overdueCount = eligible.filter((item) => item.dueDate && item.dueDate < new Date()).length;
   const generationBatches = [
-    ...groups.map((group) => ({ attempt1: group[0]!.id, attempt2: group[1]?.id, attempt3: group[2]?.id })),
-    ...unpaired.map((item) => ({ attempt1: item.id })),
+    ...groups.map((group) => group.map(g => g.id)),
+    ...unpaired.map((item) => [item.id]),
   ];
   const card = (item: PairingAttempt) => (
     <div className="rounded-lg border border-slate-700 bg-slate-900 p-3">
@@ -184,14 +202,18 @@ export async function AutomaticPairingContent({
         </div>
       ) : null}
       <div className="flex flex-wrap gap-2">
+        <div className="flex gap-1 rounded bg-slate-900 p-1">
+          <Link href="/production/sheets?view=automatic&paperSize=A4" className={`rounded px-3 py-1.5 text-xs ${paperSizeName === 'A4' ? 'bg-slate-700 text-white font-semibold' : 'text-slate-400 hover:text-white'}`}>A4 Sheet</Link>
+          <Link href="/production/sheets?view=automatic&paperSize=A3" className={`rounded px-3 py-1.5 text-xs ${paperSizeName === 'A3' ? 'bg-slate-700 text-white font-semibold' : 'text-slate-400 hover:text-white'}`}>A3 Sheet</Link>
+        </div>
         <Link
-          href="/production/sheets?view=automatic"
+          href={`/production/sheets?view=automatic&paperSize=${paperSizeName}`}
           className="rounded border border-slate-700 px-3 py-2 text-xs text-slate-300"
         >
           Refresh queue
         </Link>
-        <Link href="/production/sheets?view=automatic&reset=1" className="rounded border border-slate-700 px-3 py-2 text-xs text-slate-300">Reset Suggestions</Link>
-        {generationBatches.length ? <form action={generateAllQueueSheetsAction}><input type="hidden" name="batch" value={JSON.stringify(generationBatches)} /><input type="hidden" name="generationRequestKey" value={randomUUID()} /><button className="rounded bg-brand-600 px-3 py-2 text-xs font-semibold text-white">Generate all sheets ({generationBatches.length})</button></form> : null}
+        <Link href={`/production/sheets?view=automatic&paperSize=${paperSizeName}&reset=1`} className="rounded border border-slate-700 px-3 py-2 text-xs text-slate-300">Reset Suggestions</Link>
+        {generationBatches.length ? <form action={generateAllQueueSheetsAction}><input type="hidden" name="batch" value={JSON.stringify(generationBatches)} /><input type="hidden" name="paperSize" value={paperSizeName} /><input type="hidden" name="generationRequestKey" value={randomUUID()} /><button className="rounded bg-brand-600 px-3 py-2 text-xs font-semibold text-white">Generate all sheets ({generationBatches.length})</button></form> : null}
       </div>
       <section className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/60 p-2 text-xs">
         <div className="min-w-[120px] flex-1 rounded-lg bg-slate-950/50 px-3 py-2">
@@ -260,7 +282,7 @@ export async function AutomaticPairingContent({
                 className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3"
               >
                 {card(item)}
-                <input type="hidden" name="attempt1" value={item.id} />
+                <input type="hidden" name="attempt" value={item.id} />
                 <input
                   type="hidden"
                   name="generationRequestKey"

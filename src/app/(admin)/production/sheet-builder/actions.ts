@@ -97,7 +97,12 @@ export async function generateManualSheetAction(formData: FormData) {
   const template = entries[0]?.project.template ?? entries[0]?.project.orderItem.productVariant?.product.printTemplate;
   // Sheet generation never bakes artwork contours/cut marks. Those belong to
   // the artwork editor's print-ready export, not the production sheet.
-  const cutMarks = normalizeCutMarkSettings({ mode: "CORNER_MARKS" });
+  const cutMarks = normalizeCutMarkSettings({
+    mode: (template?.cutMarkMode as "CORNER_MARKS" | "FULL_OUTLINE" | "NONE") ?? "CORNER_MARKS",
+    lengthMm: template?.cutMarkLengthMm !== undefined ? Number(template.cutMarkLengthMm) : undefined,
+    offsetMm: template?.cutMarkOffsetMm !== undefined ? Number(template.cutMarkOffsetMm) : undefined,
+    thicknessMm: template?.cutMarkThicknessMm !== undefined ? Number(template.cutMarkThicknessMm) : undefined,
+  });
   for (const version of entries) {
     const item = version.project.orderItem;
     const versionTemplate = version.project.template ?? item.productVariant?.product.printTemplate;

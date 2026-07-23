@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { FileClock, LayoutGrid, WandSparkles } from "lucide-react";
+import { FileClock, WandSparkles } from "lucide-react";
 
 export type PrintSheetsView = "manual" | "automatic" | "history";
 
@@ -7,15 +7,16 @@ const views = [
   {
     id: "automatic" as const,
     label: "Automatic pairing",
-    description: "Review suggested A4 sheets",
+    description: "Review suggested sheets",
     icon: WandSparkles,
   },
-  {
-    id: "manual" as const,
-    label: "Manual creation",
-    description: "Choose and arrange artwork",
-    icon: LayoutGrid,
-  },
+  // Hidden as per user request, keeping code available for future use
+  // {
+  //   id: "manual" as const,
+  //   label: "Manual creation",
+  //   description: "Choose and arrange artwork",
+  //   icon: LayoutGrid,
+  // },
   {
     id: "history" as const,
     label: "Generated history",

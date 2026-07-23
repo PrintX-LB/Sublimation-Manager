@@ -434,3 +434,42 @@ export async function regeneratePhysicalPrintSheetAction(formData: FormData) {
   revalidatePath("/production/sheets");
   redirect(`/production/sheets/${created.id}`);
 }
+
+export async function batchMarkSheetsPrintedAction(formData: FormData) {
+  const raw = String(formData.get("sheetIds") ?? "").trim();
+  if (!raw) return;
+  const ids = raw.split(",").map((id) => id.trim()).filter(Boolean);
+  if (!ids.length) return;
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    for (const id of ids) {
+      const sheet = await tx.printSheet.findUnique({ where: { id } });
+      if (!sheet || sheet.status === "CANCELLED" || sheet.status === "PRINTED") continue;
+      await tx.printSheet.update({
+        where: { id },
+        data: { status: "PRINTED", printedAt: now },
+      });
+      await tx.printSheetEvent.create({
+        data: { sheetId: id, eventType: "MARKED_PRINTED", note: "Batch marked as printed." },
+      });
+    }
+  });
+  revalidatePath("/production/sheets");
+}
+
+export async function markSingleSheetPrintedAction(formData: FormData) {
+  const value = sheetId(formData);
+  const sheet = await prisma.printSheet.findUnique({ where: { id: value } });
+  if (sheet && sheet.status !== "CANCELLED" && sheet.status !== "PRINTED") {
+    await prisma.$transaction(async (tx) => {
+      await tx.printSheet.update({
+        where: { id: value },
+        data: { status: "PRINTED", printedAt: new Date() },
+      });
+      await tx.printSheetEvent.create({
+        data: { sheetId: value, eventType: "MARKED_PRINTED", note: "Marked printed via Print button." },
+      });
+    });
+  }
+  revalidatePath("/production/sheets");
+}

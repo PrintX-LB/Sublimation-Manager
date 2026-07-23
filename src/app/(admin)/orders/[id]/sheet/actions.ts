@@ -36,7 +36,13 @@ export async function createA4PrintSheetAction(formData: FormData) {
   const first = selected[0];
   const second = selected[1];
   if (!first || !second) throw new Error("SELECT_TWO_ARTWORK_VERSIONS");
-  const cutMarks = normalizeCutMarkSettings({ mode: "CORNER_MARKS" });
+  const firstTemplate = first.item.productVariant?.product.printTemplate;
+  const cutMarks = normalizeCutMarkSettings({
+    mode: (firstTemplate?.cutMarkMode as "CORNER_MARKS" | "FULL_OUTLINE" | "NONE") ?? "CORNER_MARKS",
+    lengthMm: firstTemplate?.cutMarkLengthMm !== undefined ? Number(firstTemplate.cutMarkLengthMm) : undefined,
+    offsetMm: firstTemplate?.cutMarkOffsetMm !== undefined ? Number(firstTemplate.cutMarkOffsetMm) : undefined,
+    thicknessMm: firstTemplate?.cutMarkThicknessMm !== undefined ? Number(firstTemplate.cutMarkThicknessMm) : undefined,
+  });
 
   const printSheetsBase = await getPrintSheetBuilderFolder();
   const orderFolder = path.join(

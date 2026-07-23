@@ -265,6 +265,21 @@ function createMainWindow() {
       }
     }, 100);
   });
+  // When a PDF popup (or any allowed child window) is closed, return focus to the main window.
+  // Without this, keyboard input stops working on Windows until the user minimizes/restores.
+  mainWindow.webContents.on("did-create-window", (childWindow) => {
+    childWindow.on("closed", () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+        mainWindow.focus();
+        setTimeout(() => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.focus();
+          }
+        }, 50);
+      }
+    });
+  });
   mainWindow.on("closed", () => { mainWindow = undefined; });
   mainWindow.loadURL(`${appOrigin}/dashboard`);
 }

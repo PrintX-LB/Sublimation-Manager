@@ -20,6 +20,8 @@ import {
 import { PageHeading } from "@/components/admin/page-heading";
 import { formatUSD } from "@/lib/money";
 
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);

@@ -12,6 +12,8 @@ import { ManualSheetBuilderContent } from "../sheet-builder/content";
 import { AutomaticPairingContent } from "./queue/content";
 import { DeleteSheetButton } from "./delete-sheet-button";
 import { deleteGeneratedPrintSheetAction } from "./actions";
+import { BatchPrintButton } from "./batch-print-button";
+import { PrintButton } from "./print-button";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +34,7 @@ type WorkspaceParams = {
   created?: string;
   generated?: string;
   reset?: string;
+  paperSize?: string;
 };
 
 function workspaceView(value?: string): PrintSheetsView {
@@ -92,6 +95,10 @@ async function GeneratedSheetHistory({ params }: { params: WorkspaceParams }) {
     })),
   );
 
+  const readyToPrint = rows.filter(
+    ({ sheet, available }) => sheet.status === "READY_TO_PRINT" && available,
+  ).map(({ sheet }) => ({ id: sheet.id, storagePath: sheet.storagePath }));
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -125,12 +132,15 @@ async function GeneratedSheetHistory({ params }: { params: WorkspaceParams }) {
             Filter
           </button>
         </form>
-        <Link
-          href="/production/sheets?view=manual"
-          className="inline-flex h-10 items-center gap-2 rounded bg-emerald-600 px-4 text-sm font-semibold text-white"
-        >
-          <Plus size={16} /> Create sheet
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <BatchPrintButton sheets={readyToPrint} />
+          <Link
+            href="/production/sheets?view=manual"
+            className="inline-flex h-10 items-center gap-2 rounded bg-emerald-600 px-4 text-sm font-semibold text-white"
+          >
+            <Plus size={16} /> Create sheet
+          </Link>
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-900/70">
@@ -190,9 +200,14 @@ async function GeneratedSheetHistory({ params }: { params: WorkspaceParams }) {
                   >
                     {sheet.status.replaceAll("_", " ")}
                   </span>
+                  {sheet.printedAt ? (
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Printed {sheet.printedAt.toLocaleString("en-GB")}
+                    </p>
+                  ) : null}
                 </td>
                 <td className="px-4 py-3 text-slate-400">
-                  A4 · {sheet.widthPx}×{sheet.heightPx} · {sheet.dpi} DPI
+                  {sheet.widthPx > 3000 || sheet.heightPx > 4000 ? "A3" : "A4"} · {sheet.widthPx}×{sheet.heightPx} · {sheet.dpi} DPI
                 </td>
                 <td
                   className={`px-4 py-3 text-xs ${available ? "text-emerald-300" : "text-rose-300"}`}
@@ -207,14 +222,11 @@ async function GeneratedSheetHistory({ params }: { params: WorkspaceParams }) {
                     Open
                   </Link>
                   {available ? (
-                    <a
-                      href={`/api/local-files?path=${encodeURIComponent(sheet.storagePath)}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="ml-2 rounded border border-emerald-500/40 px-3 py-1.5 text-xs text-emerald-200"
-                    >
-                      Print
-                    </a>
+                    <PrintButton
+                      sheetId={sheet.id}
+                      storagePath={sheet.storagePath}
+                      alreadyPrinted={sheet.status === "PRINTED"}
+                    />
                   ) : null}
                   <DeleteSheetButton
                     sheetId={sheet.id}

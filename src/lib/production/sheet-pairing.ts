@@ -43,7 +43,7 @@ export function suggestGroups(items: PairingAttempt[], capacityFor: (item: Pairi
   const unpaired: PairingAttempt[] = [];
   while (remaining.length) {
     const first = remaining.shift()!;
-    const capacity = Math.max(2, capacityFor(first));
+    const capacity = Math.max(1, Math.floor(capacityFor(first)));
     const group = [first];
     let currentSlots = first.remainingCount ?? 1;
     for (let index = remaining.length - 1; index >= 0 && currentSlots < capacity; index -= 1) {
