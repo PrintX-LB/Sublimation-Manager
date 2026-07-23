@@ -1300,26 +1300,11 @@ export function ArtworkEditor({
         </button>
         <button
           type="button"
-          onClick={() => changeContour({ enabled: !contour.enabled })}
-          className="rounded border border-slate-700 px-3 py-1"
-        >
-          Cut Contour: {contour.enabled ? "On" : "Off"}
-        </button>
-        <button
-          type="button"
           onClick={() => exportArtwork(false)}
           disabled={!ready || exportPending}
-          className="ml-auto rounded border border-slate-700 px-3 py-1"
+          className="ml-auto rounded bg-brand-600 px-3 py-1 font-semibold text-white"
         >
-          Export without contour
-        </button>
-        <button
-          type="button"
-          onClick={() => exportArtwork(true)}
-          disabled={!ready || exportPending || !contour.enabled}
-          className="rounded bg-brand-600 px-3 py-1 font-semibold text-white"
-        >
-          Export with contour
+          Export Artwork
         </button>
         <button
           type="button"
@@ -1359,13 +1344,7 @@ export function ArtworkEditor({
                 >
                   Properties
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setLeftTab("contour")}
-                  className={`rounded px-2 py-1 ${leftTab === "contour" ? "bg-emerald-500/20 text-emerald-300" : "text-slate-400"}`}
-                >
-                  Cut Contour
-                </button>
+
               </div>
               <button
                 type="button"
@@ -1382,7 +1361,7 @@ export function ArtworkEditor({
                 ? selectedObject
                   ? `Selected: ${layerName(selectedObject)}`
                   : "Select a layer to edit properties."
-                : "Contour settings are available in the Properties area."}
+                : null}
             </p>
             {leftTab === "properties" && selectedObject ? (
               <div className="mt-3 space-y-2">
@@ -1436,58 +1415,6 @@ export function ArtworkEditor({
                 >
                   Flip V
                 </button>
-              </div>
-            ) : null}
-            {leftTab === "contour" ? (
-              <div className="mt-3 space-y-2">
-                <label className="flex gap-2">
-                  <input
-                    type="checkbox"
-                    checked={contour.enabled}
-                    onChange={(event) =>
-                      changeContour({ enabled: event.target.checked })
-                    }
-                  />{" "}
-                  Enabled
-                </label>
-                <label className="block">
-                  Type
-                  <select
-                    className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1"
-                    value={contour.type}
-                    onChange={(event) =>
-                      changeContour({
-                        type: event.target.value as ContourSettings["type"],
-                      })
-                    }
-                  >
-                    <option value="rectangle">Artwork rectangle</option>
-                    <option value="silhouette">Silhouette</option>
-                    <option value="canvas">Full canvas</option>
-                  </select>
-                </label>
-                <label className="block">
-                  Thickness (mm)
-                  <input
-                    className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1"
-                    type="number"
-                    value={contour.thicknessMm}
-                    onChange={(event) =>
-                      changeContour({ thicknessMm: Number(event.target.value) })
-                    }
-                  />
-                </label>
-                <label className="block">
-                  Offset (mm)
-                  <input
-                    className="mt-1 w-full rounded border border-slate-700 bg-slate-950 p-1"
-                    type="number"
-                    value={contour.offsetMm}
-                    onChange={(event) =>
-                      changeContour({ offsetMm: Number(event.target.value) })
-                    }
-                  />
-                </label>
               </div>
             ) : null}
           </aside>
