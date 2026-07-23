@@ -65,7 +65,7 @@ export default async function InventoryPage({
   ];
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="w-full space-y-6">
       <PageHeading
         title="Inventory"
         description="Catalogue products, track physical and reserved stock levels, inspect movements, and manage categories."

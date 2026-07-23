@@ -43,7 +43,7 @@ export async function AutomaticPairingContent({
       status: "Ready to Print",
       failedIncident: null,
       replacementIncident: null,
-      orderItem: { order: { status: { not: "Cancelled" } } },
+      orderItem: { order: { status: { notIn: ["Cancelled", "Completed"] } } },
     },
     include: {
       orderItem: {

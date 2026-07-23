@@ -39,7 +39,7 @@ export default async function A4SheetPage({
   const firstPreview = versions[0]?.path;
   const secondPreview = versions[1]?.path ?? firstPreview;
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
+    <div className="w-full space-y-5">
       <WorkflowHeader
         title="Create A4 Print Sheet"
         description={`${order.orderNumber} · two 210 × 95 mm mug designs on portrait A4`}

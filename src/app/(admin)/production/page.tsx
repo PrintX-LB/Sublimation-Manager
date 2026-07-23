@@ -16,6 +16,7 @@ import {
   updateOrderPriorityAction,
 } from "../orders/actions";
 import { orderItemReference } from "@/lib/orders/item-reference";
+import { CollapsibleBoard } from "./board-columns";
 
 export const dynamic = "force-dynamic";
 
@@ -81,34 +82,27 @@ export default async function ProductionPage() {
         ))}
       </section>
       <div className="overflow-x-auto pb-3">
-        <div className="grid min-w-[960px] grid-cols-3 gap-4">
-          {PRODUCTION_COLUMNS.map((status) => (
-            <section
-              key={status}
-              className="flex min-h-[300px] flex-col rounded-xl border border-slate-700 bg-slate-950/50"
-            >
-              <header className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
-                <h2 className="text-sm font-semibold text-slate-200">
-                  {status}
-                </h2>
-                <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
-                  {groups[status].length}
-                </span>
-              </header>
-              <div className="flex-1 space-y-3 overflow-y-auto p-3">
-                {groups[status].length ? (
-                    groups[status].map((order) => (
-                    <CompactProductionCard key={order.id} order={order} now={now} adminUnlocked={admin} />
-                  ))
-                ) : (
-                  <p className="py-10 text-center text-xs text-slate-500">
-                    No orders here
-                  </p>
-                )}
-              </div>
-            </section>
-          ))}
-        </div>
+        <CollapsibleBoard
+          readyToPrint={
+            <ColumnSection status="Ready to print" groups={groups} now={now} admin={admin} />
+          }
+          inProduction={
+            <ColumnSection status="In production" groups={groups} now={now} admin={admin} />
+          }
+          completed={
+            <div className="flex-1 space-y-3 overflow-y-auto p-3 h-full">
+              {groups["Completed"].length ? (
+                groups["Completed"].map((order) => (
+                  <CompactProductionCard key={order.id} order={order} now={now} adminUnlocked={admin} />
+                ))
+              ) : (
+                <p className="py-10 text-center text-xs text-slate-500">
+                  No orders here
+                </p>
+              )}
+            </div>
+          }
+        />
       </div>
     </div>
   );
@@ -133,6 +127,30 @@ type BoardOrder = Awaited<ReturnType<typeof prisma.order.findMany>>[number] & {
     productionAttempts: { attemptNumber: number; status: string }[];
   }>;
 };
+
+function ColumnSection({ status, groups, now, admin }: { status: string, groups: Record<string, BoardOrder[]>, now: Date, admin: boolean }) {
+  return (
+    <section className="flex min-h-[300px] flex-col rounded-xl border border-slate-700 bg-slate-950/50">
+      <header className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
+        <h2 className="text-sm font-semibold text-slate-200">{status}</h2>
+        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-400">
+          {groups[status]?.length ?? 0}
+        </span>
+      </header>
+      <div className="flex-1 space-y-3 overflow-y-auto p-3">
+        {groups[status]?.length ? (
+          groups[status].map((order: BoardOrder) => (
+            <CompactProductionCard key={order.id} order={order} now={now} adminUnlocked={admin} />
+          ))
+        ) : (
+          <p className="py-10 text-center text-xs text-slate-500">
+            No orders here
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
 
 function CompactProductionCard({ order, now, adminUnlocked }: { order: BoardOrder; now: Date; adminUnlocked: boolean }) {
   const paid = order.payments.reduce(

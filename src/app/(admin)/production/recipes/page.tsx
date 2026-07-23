@@ -56,7 +56,7 @@ export default async function ProductionRecipesPage({
         !variant.productionRecipe.active),
   );
   return (
-    <div className="mx-auto max-w-7xl space-y-5">
+    <div className="w-full space-y-5">
       <div className="flex items-start justify-between gap-3">
         <PageHeading
           title="Production Recipes"

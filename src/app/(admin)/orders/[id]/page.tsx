@@ -145,7 +145,7 @@ export default async function OrderDetailPage({
   ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
   return (
-    <div className="mx-auto max-w-7xl space-y-5">
+    <div className="w-full space-y-5">
       <BackNavigation label="Back to Orders" fallbackRoute="/orders" />
       {query.transitionError === "insufficient_stock" ? (
         <div role="alert" className="rounded-lg border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">

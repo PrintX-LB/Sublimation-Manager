@@ -13,14 +13,6 @@ export function groupProductionOrders<T extends { status: string }>(orders: T[])
   }, {} as Record<ProductionColumn, T[]>);
 }
 
-export function sortProductionOrders<T extends { priority: string; dueDate: Date | null; createdAt: Date }>(orders: T[], now = new Date()) {
-  return [...orders].sort((a, b) => {
-    const overdue = (order: T) => order.dueDate !== null && order.dueDate.getTime() < now.getTime();
-    if (overdue(a) !== overdue(b)) return overdue(a) ? -1 : 1;
-    if ((a.priority === "Urgent") !== (b.priority === "Urgent")) return a.priority === "Urgent" ? -1 : 1;
-    if (a.dueDate && b.dueDate && a.dueDate.getTime() !== b.dueDate.getTime()) return a.dueDate.getTime() - b.dueDate.getTime();
-    if (a.dueDate !== null && b.dueDate === null) return -1;
-    if (a.dueDate === null && b.dueDate !== null) return 1;
-    return b.createdAt.getTime() - a.createdAt.getTime();
-  });
+export function sortProductionOrders<T extends { orderNumber: string }>(orders: T[]) {
+  return [...orders].sort((a, b) => a.orderNumber.localeCompare(b.orderNumber));
 }

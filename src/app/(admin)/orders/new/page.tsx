@@ -94,7 +94,7 @@ export default async function NewOrderPage({
   }));
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="w-full space-y-6">
       <WorkflowHeader
         title="New Order"
         description="Launch a new sublimation job sheet. Draft orders do not commit inventory stock levels."

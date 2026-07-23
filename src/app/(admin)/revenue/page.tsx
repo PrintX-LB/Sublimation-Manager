@@ -303,7 +303,7 @@ export default async function RevenuePage({
   });
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="w-full space-y-6">
       <PageHeading
         title="Revenue Analysis"
         description="Monitor order totals, incoming payments, product profits, outstanding balances, and export audits."
