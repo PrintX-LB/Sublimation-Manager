@@ -6,7 +6,7 @@ import { getPrintSheetBuilderFolder, resolveStoredArtworkPath } from "@/lib/orde
 import { createExactSizePdf } from "@/lib/print-pdf";
 import { artworkPathForCutMarks } from "@/lib/production-sheet-render";
 import { nextSheetFilename, A4_SHEET, A3_SHEET, calculateDynamicLayout } from "@/lib/production-sheet";
-import { composeDynamicPrintSheet, normalizeCutMarkSettings } from "@/lib/production-sheet-dynamic";
+import { composeDynamicPrintSheet, normalizeCutMarkSettings, mirrorArtworkForSheet } from "@/lib/production-sheet-dynamic";
 
 export async function generateDynamicSheetAction(formData: FormData) {
   const slotIds = formData.getAll("slot").map(String).filter(Boolean);
@@ -126,7 +126,7 @@ export async function generateDynamicSheetAction(formData: FormData) {
       const relative = artworkPathForCutMarks(version, cutMarks.mode);
       const resolved = await resolveStoredArtworkPath(relative);
       if (!resolved) throw new Error("INVALID_ARTWORK_PATH");
-      return await sharp(resolved).png().toBuffer();
+      return await mirrorArtworkForSheet(await sharp(resolved).png().toBuffer());
     }),
   );
 
